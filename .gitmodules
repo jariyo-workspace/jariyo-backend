@@ -1,0 +1,3 @@
+[submodule "jariyo-docs"]
+	path = jariyo-docs
+	url = git@github.com:jariyo-workspace/jariyo-docs.git
