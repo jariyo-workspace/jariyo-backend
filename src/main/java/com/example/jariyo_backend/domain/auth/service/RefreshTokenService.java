@@ -50,8 +50,7 @@ public class RefreshTokenService {
 
 	@Transactional(noRollbackFor = {RefreshTokenReuseException.class, RefreshTokenExpiredException.class})
 	public RefreshResult rotate(String rawToken) {
-		RefreshToken current = refreshTokenRepository.findByTokenHash(hash(rawToken))
-			.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
+		RefreshToken current = findWithFamilyLock(rawToken);
 		Instant now = clock.instant();
 		if (current.getStatus() == RefreshTokenStatus.ROTATED || current.getStatus() == RefreshTokenStatus.REUSED) {
 			current.markReused(now);
@@ -76,8 +75,21 @@ public class RefreshTokenService {
 		if (rawToken == null || rawToken.isBlank()) {
 			return;
 		}
-		refreshTokenRepository.findByTokenHash(hash(rawToken))
-			.ifPresent(token -> revokeFamily(token.getFamilyId(), clock.instant()));
+		String tokenHash = hash(rawToken);
+		refreshTokenRepository.findByTokenHash(tokenHash).ifPresent(snapshot -> {
+			refreshTokenRepository.lockFamily(snapshot.getFamilyId());
+			refreshTokenRepository.findLockedByTokenHash(tokenHash)
+				.ifPresent(token -> revokeFamily(token.getFamilyId(), clock.instant()));
+		});
+	}
+
+	private RefreshToken findWithFamilyLock(String rawToken) {
+		String tokenHash = hash(rawToken);
+		RefreshToken snapshot = refreshTokenRepository.findByTokenHash(tokenHash)
+			.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
+		refreshTokenRepository.lockFamily(snapshot.getFamilyId());
+		return refreshTokenRepository.findLockedByTokenHash(tokenHash)
+			.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 	}
 
 	private IssuedRefreshToken create(UserAccount user, UUID familyId) {

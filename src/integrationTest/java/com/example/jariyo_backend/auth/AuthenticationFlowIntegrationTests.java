@@ -3,6 +3,10 @@ package com.example.jariyo_backend.auth;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.domain.auth.dto.AuthResult;
@@ -21,6 +25,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -76,6 +81,48 @@ class AuthenticationFlowIntegrationTests {
 		BusinessException duplicate = assertThrows(BusinessException.class,
 			() -> authService.signUp(signUpRequest));
 		assertEquals(ErrorCode.EMAIL_ALREADY_EXISTS, duplicate.getErrorCode());
+	}
+
+	@Test
+	void revokesWholeFamilyWhenOldAndCurrentTokensAreUsedConcurrently() throws Exception {
+		AuthResult signedUp = authService.signUp(new SignUpRequest(
+			"concurrent@example.com",
+			"integration-password",
+			"동시성테스트",
+			"010-9876-5432",
+			new SignUpRequest.Agreements(true, true, false)));
+		AuthResult current = authService.refresh(signedUp.refreshToken());
+		CountDownLatch start = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<AuthResult> currentRefresh = executor.submit(() -> {
+				start.await();
+				try {
+					return authService.refresh(current.refreshToken());
+				} catch (BusinessException exception) {
+					return null;
+				}
+			});
+			Future<RuntimeException> oldTokenReuse = executor.submit(() -> {
+				start.await();
+				try {
+					authService.refresh(signedUp.refreshToken());
+					throw new AssertionError("이전 Refresh Token 재사용이 허용되었습니다.");
+				} catch (RuntimeException exception) {
+					return exception;
+				}
+			});
+			start.countDown();
+
+			AuthResult possiblyIssued = currentRefresh.get();
+			assertInstanceOf(RefreshTokenReuseException.class, oldTokenReuse.get());
+			if (possiblyIssued != null) {
+				assertThrows(BusinessException.class,
+					() -> authService.refresh(possiblyIssued.refreshToken()));
+			}
+		} finally {
+			executor.shutdownNow();
+		}
 	}
 
 	private static KeyPair generateKeyPair() {

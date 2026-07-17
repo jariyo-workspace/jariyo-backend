@@ -7,13 +7,14 @@ import com.example.jariyo_backend.domain.auth.dto.AuthResult;
 import com.example.jariyo_backend.domain.auth.dto.RefreshResult;
 import com.example.jariyo_backend.domain.auth.dto.SignInRequest;
 import com.example.jariyo_backend.domain.auth.dto.SignUpRequest;
-import com.example.jariyo_backend.domain.auth.support.EmailNormalizer;
 import com.example.jariyo_backend.domain.auth.support.PhoneNumberNormalizer;
 import com.example.jariyo_backend.domain.user.entity.CustomerProfile;
 import com.example.jariyo_backend.domain.user.entity.UserAccount;
 import com.example.jariyo_backend.domain.user.entity.UserStatus;
 import com.example.jariyo_backend.domain.user.repository.CustomerProfileRepository;
 import com.example.jariyo_backend.domain.user.repository.UserAccountRepository;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,17 +65,9 @@ public class AuthService {
 			throw new BusinessException(ErrorCode.REQUIRED_AGREEMENT_MISSING);
 		}
 		passwordPolicy.validate(request.password());
-		String email = EmailNormalizer.normalize(request.email());
+		String email = request.email();
 		String phoneNumber = PhoneNumberNormalizer.normalize(request.phoneNumber());
-		if (userAccountRepository.existsByEmailAndStatusNot(email, UserStatus.WITHDRAWN)) {
-			throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
-		}
-		if (userAccountRepository.existsByPhoneNumberAndStatusNot(phoneNumber, UserStatus.WITHDRAWN)) {
-			throw new BusinessException(ErrorCode.PHONE_NUMBER_ALREADY_EXISTS);
-		}
-
-		UserAccount user = userAccountRepository.save(
-			new UserAccount(email, phoneNumber, passwordEncoder.encode(request.password())));
+		UserAccount user = saveUser(email, phoneNumber, request.password());
 		customerProfileRepository.save(
 			new CustomerProfile(user, request.displayName(), request.agreements().marketing(), true));
 		return issueTokens(user);
@@ -82,7 +75,7 @@ public class AuthService {
 
 	@Transactional
 	public AuthResult signIn(SignInRequest request) {
-		String email = EmailNormalizer.normalize(request.email());
+		String email = request.email();
 		UserAccount user = userAccountRepository.findByEmailAndStatusNot(email, UserStatus.WITHDRAWN)
 			.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
 		if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
@@ -116,5 +109,30 @@ public class AuthService {
 
 	private AuthResult issueTokens(UserAccount user) {
 		return new AuthResult(user.getId(), jwtTokenService.issue(user), refreshTokenService.issue(user));
+	}
+
+	private UserAccount saveUser(String email, String phoneNumber, String password) {
+		try {
+			return userAccountRepository.saveAndFlush(
+				new UserAccount(email, phoneNumber, passwordEncoder.encode(password)));
+		} catch (DataIntegrityViolationException exception) {
+			throw duplicateUserException(exception);
+		}
+	}
+
+	private RuntimeException duplicateUserException(DataIntegrityViolationException exception) {
+		Throwable cause = exception;
+		while (cause != null) {
+			if (cause instanceof ConstraintViolationException constraintViolation) {
+				return switch (constraintViolation.getConstraintName()) {
+					case "uk_users_active_email" -> new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+					case "uk_users_active_phone_number" ->
+						new BusinessException(ErrorCode.PHONE_NUMBER_ALREADY_EXISTS);
+					default -> exception;
+				};
+			}
+			cause = cause.getCause();
+		}
+		return exception;
 	}
 }

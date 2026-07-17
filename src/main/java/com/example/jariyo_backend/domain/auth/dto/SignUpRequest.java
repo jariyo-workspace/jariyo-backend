@@ -1,5 +1,6 @@
 package com.example.jariyo_backend.domain.auth.dto;
 
+import com.example.jariyo_backend.domain.auth.support.EmailNormalizer;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -13,6 +14,12 @@ public record SignUpRequest(
 	@NotBlank @Size(max = 32) String phoneNumber,
 	@NotNull @Valid Agreements agreements
 ) {
+	public SignUpRequest {
+		if (email != null) {
+			email = EmailNormalizer.normalize(email);
+		}
+	}
+
 	public record Agreements(boolean terms, boolean privacy, boolean marketing) {
 	}
 }

@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.jwt.JwtValidationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 
@@ -22,7 +23,7 @@ public class AuthenticationEntryPointHandler implements AuthenticationEntryPoint
 	@Override
 	public void commence(HttpServletRequest request, HttpServletResponse response,
 		AuthenticationException exception) throws IOException {
-		ErrorCode errorCode = hasExpiredCause(exception)
+		ErrorCode errorCode = hasExpiredError(exception)
 			? ErrorCode.ACCESS_TOKEN_EXPIRED
 			: request.getHeader("Authorization") == null
 				? ErrorCode.AUTHENTICATION_REQUIRED
@@ -30,10 +31,12 @@ public class AuthenticationEntryPointHandler implements AuthenticationEntryPoint
 		write(response, errorCode);
 	}
 
-	private boolean hasExpiredCause(Throwable throwable) {
+	private boolean hasExpiredError(Throwable throwable) {
 		Throwable current = throwable;
 		while (current != null) {
-			if (current.getMessage() != null && current.getMessage().toLowerCase().contains("expired")) {
+			if (current instanceof JwtValidationException validationException
+				&& validationException.getErrors().stream()
+					.anyMatch(error -> JwtConfig.EXPIRED_TOKEN_ERROR_CODE.equals(error.getErrorCode()))) {
 				return true;
 			}
 			current = current.getCause();

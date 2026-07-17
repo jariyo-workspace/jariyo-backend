@@ -44,11 +44,14 @@ class RefreshTokenServiceTests {
 		RefreshToken original = captor.getValue();
 		when(refreshTokenRepository.findByTokenHash(RefreshTokenService.hash(originalRawToken)))
 			.thenReturn(Optional.of(original));
+		when(refreshTokenRepository.findLockedByTokenHash(RefreshTokenService.hash(originalRawToken)))
+			.thenReturn(Optional.of(original));
 
 		RefreshResult result = refreshTokenService.rotate(originalRawToken);
 
 		assertNotEquals(originalRawToken, result.refreshToken());
 		assertNotEquals(RefreshTokenStatus.ACTIVE, original.getStatus());
+		verify(refreshTokenRepository).lockFamily(original.getFamilyId());
 		when(refreshTokenRepository.findAllByFamilyId(original.getFamilyId())).thenReturn(List.of(original));
 		assertThrows(RefreshTokenReuseException.class, () -> refreshTokenService.rotate(originalRawToken));
 	}
