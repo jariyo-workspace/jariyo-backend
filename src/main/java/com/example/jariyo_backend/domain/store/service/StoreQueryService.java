@@ -4,6 +4,17 @@ import java.util.List;
 import java.util.UUID;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
+import com.example.jariyo_backend.domain.store.dto.BusinessHourSummary;
+import com.example.jariyo_backend.domain.store.dto.ScheduleExceptionSummary;
+import com.example.jariyo_backend.domain.store.dto.ServiceStaffSummary;
+import com.example.jariyo_backend.domain.store.dto.ServiceSummary;
+import com.example.jariyo_backend.domain.store.dto.StaffScheduleExceptionSummary;
+import com.example.jariyo_backend.domain.store.dto.StaffScheduleSummary;
+import com.example.jariyo_backend.domain.store.dto.StoreDetail;
+import com.example.jariyo_backend.domain.store.dto.StoreMemberDetail;
+import com.example.jariyo_backend.domain.store.dto.StoreMemberSummary;
+import com.example.jariyo_backend.domain.store.dto.StorePolicySummary;
+import com.example.jariyo_backend.domain.store.dto.StoreSummary;
 import com.example.jariyo_backend.domain.store.entity.BusinessHour;
 import com.example.jariyo_backend.domain.store.entity.ScheduleException;
 import com.example.jariyo_backend.domain.store.entity.ServiceOffering;
@@ -152,105 +163,5 @@ public class StoreQueryService {
 
 	private long countAvailableStaff(UUID serviceId) {
 		return staffServiceRepository.findAllByServiceIdAndActiveTrueOrderByStoreMemberIdAsc(serviceId).stream().count();
-	}
-
-	public record StoreSummary(UUID id, String name, String description, String phoneNumber, String address, String timezone,
-		String status) {
-		static StoreSummary from(Store store) {
-			return new StoreSummary(store.getId(), store.getName(), store.getDescription(), store.getPhoneNumber(),
-				store.getAddress(), store.getTimezone(), store.getStatus().name());
-		}
-	}
-
-	public record StoreDetail(UUID id, String name, String description, String phoneNumber, String address, String timezone,
-		String status, List<BusinessHourSummary> businessHours, StorePolicySummary policySummary) {
-		static StoreDetail from(Store store, StorePolicy policy, List<BusinessHour> businessHours) {
-			return new StoreDetail(store.getId(), store.getName(), store.getDescription(), store.getPhoneNumber(),
-				store.getAddress(), store.getTimezone(), store.getStatus().name(),
-				businessHours.stream().map(BusinessHourSummary::from).toList(),
-				policy == null ? null : StorePolicySummary.from(policy));
-		}
-	}
-
-	public record ServiceSummary(UUID id, String name, String description, int durationMinutes, int cleanupMinutes,
-		int capacity, String status, long availableStaffCount) {
-		static ServiceSummary from(ServiceOffering service, long availableStaffCount) {
-			return new ServiceSummary(service.getId(), service.getName(), service.getDescription(),
-				service.getDurationMinutes(), service.getCleanupMinutes(), service.getCapacity(),
-				service.getStatus().name(), availableStaffCount);
-		}
-	}
-
-	public record ServiceStaffSummary(UUID id, String displayName, boolean bookingEnabled, Integer customDurationMinutes) {
-		static ServiceStaffSummary from(StoreMember member, StaffService service) {
-			return new ServiceStaffSummary(member.getId(), member.getDisplayName(), member.isBookingEnabled(),
-				service.getCustomDurationMinutes());
-		}
-	}
-
-	public record StoreMemberSummary(UUID id, String displayName, String role, String status, boolean bookingEnabled) {
-		static StoreMemberSummary from(StoreMember member) {
-			return new StoreMemberSummary(member.getId(), member.getDisplayName(), member.getRole().name(),
-				member.getStatus().name(), member.isBookingEnabled());
-		}
-	}
-
-	public record StoreMemberDetail(UUID id, String displayName, String role, String status, boolean bookingEnabled,
-		UUID storeId) {
-		static StoreMemberDetail from(StoreMember member) {
-			return new StoreMemberDetail(member.getId(), member.getDisplayName(), member.getRole().name(),
-				member.getStatus().name(), member.isBookingEnabled(), member.getStoreId());
-		}
-	}
-
-	public record StaffScheduleSummary(UUID id, String dayOfWeek, String startTime, String endTime,
-		String validFrom, String validUntil) {
-		static StaffScheduleSummary from(StaffSchedule schedule) {
-			return new StaffScheduleSummary(schedule.getId(), schedule.getDayOfWeek().name(),
-				schedule.getStartTime().toString(), schedule.getEndTime().toString(),
-				schedule.getValidFrom() == null ? null : schedule.getValidFrom().toString(),
-				schedule.getValidUntil() == null ? null : schedule.getValidUntil().toString());
-		}
-	}
-
-	public record StaffScheduleExceptionSummary(UUID id, String targetDate, String type, String startTime,
-		String endTime, String reason) {
-		static StaffScheduleExceptionSummary from(StaffScheduleException exception) {
-			return new StaffScheduleExceptionSummary(exception.getId(), exception.getTargetDate().toString(),
-				exception.getType().name(), exception.getStartTime() == null ? null : exception.getStartTime().toString(),
-				exception.getEndTime() == null ? null : exception.getEndTime().toString(), exception.getReason());
-		}
-	}
-
-	public record BusinessHourSummary(String dayOfWeek, List<Period> periods) {
-		static BusinessHourSummary from(BusinessHour hour) {
-			return new BusinessHourSummary(hour.getDayOfWeek().name(),
-				List.of(new Period(hour.getOpenTime() == null ? null : hour.getOpenTime().toString(),
-					hour.getCloseTime() == null ? null : hour.getCloseTime().toString())));
-		}
-		public record Period(String openTime, String closeTime) {
-		}
-	}
-
-	public record ScheduleExceptionSummary(UUID id, String targetDate, String type, String startTime, String endTime,
-		String reason) {
-		static ScheduleExceptionSummary from(ScheduleException exception) {
-			return new ScheduleExceptionSummary(exception.getId(), exception.getTargetDate().toString(),
-				exception.getType().name(), exception.getStartTime() == null ? null : exception.getStartTime().toString(),
-				exception.getEndTime() == null ? null : exception.getEndTime().toString(), exception.getReason());
-		}
-	}
-
-	public record StorePolicySummary(int bookingOpenDays, int minimumBookingNoticeMinutes,
-		int cancellationDeadlineMinutes, int checkInOpenBeforeMinutes, int lateToleranceMinutes, int noShowAfterMinutes,
-		int reservationHoldMinutes, int slotOfferExpirationMinutes, int walkInCallTimeoutMinutes, boolean waitlistEnabled,
-		boolean walkInEnabled, boolean autoNoShowEnabled) {
-		static StorePolicySummary from(StorePolicy policy) {
-			return new StorePolicySummary(policy.getBookingOpenDays(), policy.getMinimumBookingNoticeMinutes(),
-				policy.getCancellationDeadlineMinutes(), policy.getCheckInOpenBeforeMinutes(),
-				policy.getLateToleranceMinutes(), policy.getNoShowAfterMinutes(), policy.getReservationHoldMinutes(),
-				policy.getSlotOfferExpirationMinutes(), policy.getWalkInCallTimeoutMinutes(),
-				policy.isWaitlistEnabled(), policy.isWalkInEnabled(), policy.isAutoNoShowEnabled());
-		}
 	}
 }

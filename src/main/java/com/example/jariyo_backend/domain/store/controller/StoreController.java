@@ -3,6 +3,17 @@ package com.example.jariyo_backend.domain.store.controller;
 import java.util.List;
 import java.util.UUID;
 import com.example.jariyo_backend.common.api.ApiResponse;
+import com.example.jariyo_backend.domain.store.dto.BusinessHourSummary;
+import com.example.jariyo_backend.domain.store.dto.ScheduleExceptionSummary;
+import com.example.jariyo_backend.domain.store.dto.ServiceStaffSummary;
+import com.example.jariyo_backend.domain.store.dto.ServiceSummary;
+import com.example.jariyo_backend.domain.store.dto.StaffScheduleExceptionSummary;
+import com.example.jariyo_backend.domain.store.dto.StaffScheduleSummary;
+import com.example.jariyo_backend.domain.store.dto.StoreDetail;
+import com.example.jariyo_backend.domain.store.dto.StoreMemberDetail;
+import com.example.jariyo_backend.domain.store.dto.StoreMemberSummary;
+import com.example.jariyo_backend.domain.store.dto.StorePolicySummary;
+import com.example.jariyo_backend.domain.store.dto.StoreSummary;
 import com.example.jariyo_backend.domain.store.service.StoreQueryService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,66 +32,65 @@ public class StoreController {
 	}
 
 	@GetMapping("/stores")
-	public ResponseEntity<ApiResponse<List<StoreQueryService.StoreSummary>>> listStores() {
+	public ResponseEntity<ApiResponse<List<StoreSummary>>> listStores() {
 		return ResponseEntity.ok(ApiResponse.success(storeQueryService.listStores()));
 	}
 
 	@GetMapping("/stores/{storeId}")
-	public ResponseEntity<ApiResponse<StoreQueryService.StoreDetail>> getStore(@PathVariable UUID storeId) {
+	public ResponseEntity<ApiResponse<StoreDetail>> getStore(@PathVariable UUID storeId) {
 		return ResponseEntity.ok(ApiResponse.success(storeQueryService.getStore(storeId)));
 	}
 
 	@GetMapping("/stores/{storeId}/services")
-	public ResponseEntity<ApiResponse<List<StoreQueryService.ServiceSummary>>> listServices(@PathVariable UUID storeId,
+	public ResponseEntity<ApiResponse<List<ServiceSummary>>> listServices(@PathVariable UUID storeId,
 		@RequestParam(name = "activeOnly", defaultValue = "false") boolean activeOnly) {
 		return ResponseEntity.ok(ApiResponse.success(storeQueryService.listServices(storeId, activeOnly)));
 	}
 
 	@GetMapping("/stores/{storeId}/services/{serviceId}/staff")
-	public ResponseEntity<ApiResponse<List<StoreQueryService.ServiceStaffSummary>>> listServiceStaff(
+	public ResponseEntity<ApiResponse<List<ServiceStaffSummary>>> listServiceStaff(
 		@PathVariable UUID storeId, @PathVariable UUID serviceId) {
 		return ResponseEntity.ok(ApiResponse.success(storeQueryService.listServiceStaff(storeId, serviceId)));
 	}
 
 	@GetMapping("/admin/stores/{storeId}/staff")
-	public ResponseEntity<ApiResponse<List<StoreQueryService.StoreMemberSummary>>> listAdminStaff(
+	public ResponseEntity<ApiResponse<List<StoreMemberSummary>>> listAdminStaff(
 		@PathVariable UUID storeId) {
 		return ResponseEntity.ok(ApiResponse.success(storeQueryService.listAdminStaff(storeId)));
 	}
 
 	@GetMapping("/admin/stores/{storeId}/staff/{staffId}")
-	public ResponseEntity<ApiResponse<StoreQueryService.StoreMemberDetail>> getAdminStaff(@PathVariable UUID storeId,
+	public ResponseEntity<ApiResponse<StoreMemberDetail>> getAdminStaff(@PathVariable UUID storeId,
 		@PathVariable UUID staffId) {
 		return ResponseEntity.ok(ApiResponse.success(storeQueryService.getAdminStaff(storeId, staffId)));
 	}
 
 	@GetMapping("/admin/stores/{storeId}/staff/{staffId}/schedules")
-	public ResponseEntity<ApiResponse<List<StoreQueryService.StaffScheduleSummary>>> listStaffSchedules(
+	public ResponseEntity<ApiResponse<List<StaffScheduleSummary>>> listStaffSchedules(
 		@PathVariable UUID storeId, @PathVariable UUID staffId) {
 		return ResponseEntity.ok(ApiResponse.success(storeQueryService.listStaffSchedules(storeId, staffId)));
 	}
 
 	@GetMapping("/admin/stores/{storeId}/staff/{staffId}/schedule-exceptions")
-	public ResponseEntity<ApiResponse<List<StoreQueryService.StaffScheduleExceptionSummary>>> listStaffScheduleExceptions(
+	public ResponseEntity<ApiResponse<List<StaffScheduleExceptionSummary>>> listStaffScheduleExceptions(
 		@PathVariable UUID storeId, @PathVariable UUID staffId) {
 		return ResponseEntity.ok(ApiResponse.success(storeQueryService.listStaffScheduleExceptions(storeId, staffId)));
 	}
 
 	@GetMapping("/admin/stores/{storeId}/business-hours")
-	public ResponseEntity<ApiResponse<List<StoreQueryService.BusinessHourSummary>>> listBusinessHours(
+	public ResponseEntity<ApiResponse<List<BusinessHourSummary>>> listBusinessHours(
 		@PathVariable UUID storeId) {
 		return ResponseEntity.ok(ApiResponse.success(storeQueryService.listBusinessHours(storeId)));
 	}
 
 	@GetMapping("/admin/stores/{storeId}/schedule-exceptions")
-	public ResponseEntity<ApiResponse<List<StoreQueryService.ScheduleExceptionSummary>>> listScheduleExceptions(
+	public ResponseEntity<ApiResponse<List<ScheduleExceptionSummary>>> listScheduleExceptions(
 		@PathVariable UUID storeId) {
 		return ResponseEntity.ok(ApiResponse.success(storeQueryService.listScheduleExceptions(storeId)));
 	}
 
 	@GetMapping("/admin/stores/{storeId}/policy")
-	public ResponseEntity<ApiResponse<StoreQueryService.StorePolicySummary>> getPolicy(@PathVariable UUID storeId) {
+	public ResponseEntity<ApiResponse<StorePolicySummary>> getPolicy(@PathVariable UUID storeId) {
 		return ResponseEntity.ok(ApiResponse.success(storeQueryService.getPolicy(storeId)));
 	}
 }
-
