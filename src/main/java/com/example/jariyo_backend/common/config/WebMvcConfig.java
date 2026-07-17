@@ -15,6 +15,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
 	@Override
 	public void addInterceptors(InterceptorRegistry registry) {
-		registry.addInterceptor(idempotencyKeyInterceptor);
+		registry.addInterceptor(idempotencyKeyInterceptor)
+			.excludePathPatterns("/api/v1/auth/**");
 	}
 }
