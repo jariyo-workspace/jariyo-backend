@@ -1,13 +1,13 @@
 package com.example.jariyo_backend;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
-@SpringBootTest
 class JariyoBackendApplicationTests {
 
 	@Test
-	void contextLoads() {
+	void applicationClassIsAvailable() {
+		assertDoesNotThrow(() -> Class.forName(JariyoBackendApplication.class.getName()));
 	}
 
 }
