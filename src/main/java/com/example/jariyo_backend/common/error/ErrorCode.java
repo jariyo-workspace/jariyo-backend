@@ -3,6 +3,22 @@ package com.example.jariyo_backend.common.error;
 import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
+	AUTHENTICATION_REQUIRED("AUTHENTICATION_REQUIRED", HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
+	INVALID_CREDENTIALS("INVALID_CREDENTIALS", HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다."),
+	INVALID_ACCESS_TOKEN("INVALID_ACCESS_TOKEN", HttpStatus.UNAUTHORIZED, "Access Token이 올바르지 않습니다."),
+	ACCESS_TOKEN_EXPIRED("ACCESS_TOKEN_EXPIRED", HttpStatus.UNAUTHORIZED, "Access Token이 만료되었습니다."),
+	INVALID_REFRESH_TOKEN("INVALID_REFRESH_TOKEN", HttpStatus.UNAUTHORIZED, "Refresh Token이 올바르지 않습니다."),
+	REFRESH_TOKEN_EXPIRED("REFRESH_TOKEN_EXPIRED", HttpStatus.UNAUTHORIZED, "Refresh Token이 만료되었습니다."),
+	REFRESH_TOKEN_REUSED("REFRESH_TOKEN_REUSED", HttpStatus.UNAUTHORIZED, "재사용된 Refresh Token입니다."),
+	ACCESS_DENIED("ACCESS_DENIED", HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
+	STORE_ACCESS_DENIED("STORE_ACCESS_DENIED", HttpStatus.FORBIDDEN, "해당 매장에 대한 접근 권한이 없습니다."),
+	RESOURCE_NOT_OWNED_BY_USER("RESOURCE_NOT_OWNED_BY_USER", HttpStatus.FORBIDDEN, "본인의 리소스만 처리할 수 있습니다."),
+	EMAIL_ALREADY_EXISTS("EMAIL_ALREADY_EXISTS", HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다."),
+	PHONE_NUMBER_ALREADY_EXISTS("PHONE_NUMBER_ALREADY_EXISTS", HttpStatus.CONFLICT, "이미 사용 중인 전화번호입니다."),
+	INVALID_PASSWORD_FORMAT("INVALID_PASSWORD_FORMAT", HttpStatus.BAD_REQUEST, "비밀번호는 15자 이상 64자 이하여야 합니다."),
+	REQUIRED_AGREEMENT_MISSING("REQUIRED_AGREEMENT_MISSING", HttpStatus.BAD_REQUEST, "필수 약관에 동의해야 합니다."),
+	USER_NOT_FOUND("USER_NOT_FOUND", HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
+	USER_SUSPENDED("USER_SUSPENDED", HttpStatus.FORBIDDEN, "정지된 사용자입니다."),
 	UNAUTHORIZED("AUTH-401", HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
 	FORBIDDEN("AUTH-403", HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
 	NOT_FOUND("COMMON-404", HttpStatus.NOT_FOUND, "요청한 리소스를 찾을 수 없습니다."),
