@@ -43,5 +43,7 @@ This repository follows the conventions documented in `jariyo-docs/CONTRIBUTING.
 
 PR titles should use `[FEAT]`, `[FIX]`, `[DOCS]`, `[REFACTOR]`, or `[CHORE]`, and each PR should cover one topic, link its issue (`Closes #12`), and include the `jariyo-docs` updates or document references that justify the change.
 
+When creating multi-line GitHub CLI bodies, use a heredoc or other actual newline source instead of escaped `\n` sequences so the rendered text keeps its line breaks.
+
 ## Language Rules
 Write repository reports, explanations, and documentation updates in Korean by default. Keep fixed technical identifiers such as package names, class names, commands, and commit prefixes in English where needed.
