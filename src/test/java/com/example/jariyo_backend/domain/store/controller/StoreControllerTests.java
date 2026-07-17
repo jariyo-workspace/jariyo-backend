@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.List;
 import java.util.UUID;
 
+import com.example.jariyo_backend.domain.store.dto.StoreDetail;
 import com.example.jariyo_backend.domain.store.service.StoreQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,7 @@ class StoreControllerTests {
 	@Test
 	void getStoreReturnsStoreDetail() throws Exception {
 		UUID storeId = UUID.fromString("00000000-0000-7000-8000-000000000001");
-		given(storeQueryService.getStore(storeId)).willReturn(new StoreQueryService.StoreDetail(storeId, "자리요 헤어",
+		given(storeQueryService.getStore(storeId)).willReturn(new StoreDetail(storeId, "자리요 헤어",
 			"예약과 현장 대기가 가능한 헤어숍", "053-123-4567", "대구광역시 중구 달구벌대로 123", "Asia/Seoul", "ACTIVE",
 			List.of(), null));
 
