@@ -70,6 +70,10 @@ public class StoreMember {
 		return storeId;
 	}
 
+	public UUID getId() {
+		return id;
+	}
+
 	public StoreMemberRole getRole() {
 		return role;
 	}
