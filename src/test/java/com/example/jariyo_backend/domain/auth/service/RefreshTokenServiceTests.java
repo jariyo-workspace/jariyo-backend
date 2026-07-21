@@ -42,8 +42,8 @@ class RefreshTokenServiceTests {
 		ArgumentCaptor<RefreshToken> captor = ArgumentCaptor.forClass(RefreshToken.class);
 		verify(refreshTokenRepository).save(captor.capture());
 		RefreshToken original = captor.getValue();
-		when(refreshTokenRepository.findByTokenHash(RefreshTokenService.hash(originalRawToken)))
-			.thenReturn(Optional.of(original));
+		when(refreshTokenRepository.findFamilyIdByTokenHash(RefreshTokenService.hash(originalRawToken)))
+			.thenReturn(Optional.of(original.getFamilyId()));
 		when(refreshTokenRepository.findLockedByTokenHash(RefreshTokenService.hash(originalRawToken)))
 			.thenReturn(Optional.of(original));
 

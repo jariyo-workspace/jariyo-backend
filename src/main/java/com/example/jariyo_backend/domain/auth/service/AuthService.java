@@ -7,6 +7,8 @@ import com.example.jariyo_backend.domain.auth.dto.AuthResult;
 import com.example.jariyo_backend.domain.auth.dto.RefreshResult;
 import com.example.jariyo_backend.domain.auth.dto.SignInRequest;
 import com.example.jariyo_backend.domain.auth.dto.SignUpRequest;
+import com.example.jariyo_backend.domain.auth.exception.RefreshTokenExpiredException;
+import com.example.jariyo_backend.domain.auth.exception.RefreshTokenReuseException;
 import com.example.jariyo_backend.domain.auth.support.PhoneNumberNormalizer;
 import com.example.jariyo_backend.domain.user.entity.CustomerProfile;
 import com.example.jariyo_backend.domain.user.entity.UserAccount;
@@ -14,6 +16,7 @@ import com.example.jariyo_backend.domain.user.entity.UserStatus;
 import com.example.jariyo_backend.domain.user.repository.CustomerProfileRepository;
 import com.example.jariyo_backend.domain.user.repository.UserAccountRepository;
 import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -29,6 +32,7 @@ public class AuthService {
 	private final RefreshTokenService refreshTokenService;
 	private final Clock clock;
 
+	@Autowired
 	public AuthService(
 		UserAccountRepository userAccountRepository,
 		CustomerProfileRepository customerProfileRepository,
@@ -88,6 +92,7 @@ public class AuthService {
 		return issueTokens(user);
 	}
 
+	@Transactional(noRollbackFor = {RefreshTokenReuseException.class, RefreshTokenExpiredException.class})
 	public AuthResult refresh(String rawRefreshToken) {
 		if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
 			throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
