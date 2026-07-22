@@ -41,6 +41,8 @@ Testing is currently based on `spring-boot-starter-test` with JUnit Platform ena
 ## Commit & Pull Request Guidelines
 This repository follows the conventions documented in `jariyo-docs/CONTRIBUTING.md`. Do not commit directly to `main`, and never push directly to `master`. Also avoid force pushes, direct merges to protected branches, and history-rewriting Git actions that bypass review unless explicitly requested and approved. Create an issue first, then work on a scoped branch such as `feature/reservation-status-policy` or `fix/api-response-typo`. Use prefixed commit messages like `feat: 예약 엔드포인트 추가`, `fix: 응답 매핑 수정`, or `docs: API 가이드 업데이트`.
 
+Before making any code, document, or configuration change, check the current branch. If you are on `master` or `main`, stop and create a task branch first. Working directly on `master` or `main` is prohibited even for small edits, hotfixes, or documentation-only tasks.
+
 PR titles should use `[FEAT]`, `[FIX]`, `[DOCS]`, `[REFACTOR]`, or `[CHORE]`, and each PR should cover one topic, link its issue (`Closes #12`), and include the `jariyo-docs` updates or document references that justify the change.
 
 When creating multi-line GitHub CLI bodies, use a heredoc or other actual newline source instead of escaped `\n` sequences so the rendered text keeps its line breaks.
