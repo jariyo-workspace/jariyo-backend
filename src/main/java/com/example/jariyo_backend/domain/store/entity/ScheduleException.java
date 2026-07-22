@@ -49,6 +49,18 @@ public class ScheduleException {
 	protected ScheduleException() {
 	}
 
+	public ScheduleException(UUID id, UUID storeId, LocalDate targetDate, ScheduleExceptionType type,
+		LocalTime startTime, LocalTime endTime, String reason, UUID createdByMemberId) {
+		this.id = id;
+		this.storeId = storeId;
+		this.targetDate = targetDate;
+		this.type = type;
+		this.startTime = startTime;
+		this.endTime = endTime;
+		this.reason = reason;
+		this.createdByMemberId = createdByMemberId;
+	}
+
 	public UUID getId() {
 		return id;
 	}

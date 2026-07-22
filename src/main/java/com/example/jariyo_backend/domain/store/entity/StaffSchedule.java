@@ -1,6 +1,7 @@
 package com.example.jariyo_backend.domain.store.entity;
 
 import java.time.Instant;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.UUID;
@@ -44,6 +45,17 @@ public class StaffSchedule {
 	private Instant createdAt;
 
 	protected StaffSchedule() {
+	}
+
+	public StaffSchedule(UUID id, UUID storeMemberId, DayOfWeek dayOfWeek, LocalTime startTime, LocalTime endTime,
+		LocalDate validFrom, LocalDate validUntil) {
+		this.id = id;
+		this.storeMemberId = storeMemberId;
+		this.dayOfWeek = DayOfWeekValue.valueOf(dayOfWeek.name());
+		this.startTime = startTime;
+		this.endTime = endTime;
+		this.validFrom = validFrom;
+		this.validUntil = validUntil;
 	}
 
 	public UUID getStoreMemberId() {

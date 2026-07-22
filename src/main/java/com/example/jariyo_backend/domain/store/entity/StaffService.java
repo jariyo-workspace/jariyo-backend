@@ -32,6 +32,14 @@ public class StaffService {
 	protected StaffService() {
 	}
 
+	public StaffService(UUID id, UUID storeMemberId, UUID serviceId, Integer customDurationMinutes, boolean active) {
+		this.id = id;
+		this.storeMemberId = storeMemberId;
+		this.serviceId = serviceId;
+		this.customDurationMinutes = customDurationMinutes;
+		this.active = active;
+	}
+
 	public UUID getStoreMemberId() {
 		return storeMemberId;
 	}
@@ -48,4 +56,3 @@ public class StaffService {
 		return active;
 	}
 }
-

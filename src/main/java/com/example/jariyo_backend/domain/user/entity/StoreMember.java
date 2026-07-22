@@ -58,6 +58,12 @@ public class StoreMember {
 	}
 
 	public StoreMember(UUID storeId, UserAccount user, StoreMemberRole role, String displayName, boolean bookingEnabled) {
+		this(null, storeId, user, role, displayName, bookingEnabled);
+	}
+
+	public StoreMember(UUID id, UUID storeId, UserAccount user, StoreMemberRole role, String displayName,
+		boolean bookingEnabled) {
+		this.id = id;
 		this.storeId = storeId;
 		this.user = user;
 		this.role = role;

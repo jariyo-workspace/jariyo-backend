@@ -49,6 +49,21 @@ public class Store {
 	protected Store() {
 	}
 
+	public Store(UUID id) {
+		this.id = id;
+	}
+
+	public Store(UUID id, String name, String description, String phoneNumber, String address, String timezone,
+		StoreStatus status) {
+		this.id = id;
+		this.name = name;
+		this.description = description;
+		this.phoneNumber = phoneNumber;
+		this.address = address;
+		this.timezone = timezone;
+		this.status = status;
+	}
+
 	public UUID getId() {
 		return id;
 	}

@@ -6,6 +6,7 @@ import com.example.jariyo_backend.domain.store.entity.StaffSchedule;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface StaffScheduleRepository extends JpaRepository<StaffSchedule, UUID> {
+	List<StaffSchedule> findAllByStoreMemberIdIn(Iterable<UUID> storeMemberIds);
+
 	List<StaffSchedule> findAllByStoreMemberIdOrderByDayOfWeekAscStartTimeAsc(UUID storeMemberId);
 }
-

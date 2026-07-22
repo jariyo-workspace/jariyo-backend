@@ -7,5 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface StorePolicyRepository extends JpaRepository<StorePolicy, UUID> {
 	Optional<StorePolicy> findByStore_Id(UUID storeId);
-}
 
+	default Optional<StorePolicy> findByStoreId(UUID storeId) {
+		return findByStore_Id(storeId);
+	}
+}

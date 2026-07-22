@@ -1,5 +1,6 @@
 package com.example.jariyo_backend.domain.store.entity;
 
+import java.time.DayOfWeek;
 import java.time.LocalTime;
 import java.util.UUID;
 import org.hibernate.annotations.UuidGenerator;
@@ -34,6 +35,16 @@ public class BusinessHour {
 	private boolean closed;
 
 	protected BusinessHour() {
+	}
+
+	public BusinessHour(UUID id, UUID storeId, DayOfWeek dayOfWeek, LocalTime openTime, LocalTime closeTime,
+		boolean closed) {
+		this.id = id;
+		this.storeId = storeId;
+		this.dayOfWeek = DayOfWeekValue.valueOf(dayOfWeek.name());
+		this.openTime = openTime;
+		this.closeTime = closeTime;
+		this.closed = closed;
 	}
 
 	public UUID getStoreId() {
