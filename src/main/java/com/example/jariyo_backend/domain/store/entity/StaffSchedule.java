@@ -1,7 +1,7 @@
 package com.example.jariyo_backend.domain.store.entity;
 
-import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.UUID;
@@ -26,7 +26,7 @@ public class StaffSchedule {
 
 	@Enumerated(EnumType.STRING)
 	@Column(name = "day_of_week", nullable = false, length = 16)
-	private DayOfWeek dayOfWeek;
+	private DayOfWeekValue dayOfWeek;
 
 	@Column(name = "start_time", nullable = false)
 	private LocalTime startTime;
@@ -34,7 +34,7 @@ public class StaffSchedule {
 	@Column(name = "end_time", nullable = false)
 	private LocalTime endTime;
 
-	@Column(name = "valid_from", nullable = false)
+	@Column(name = "valid_from")
 	private LocalDate validFrom;
 
 	@Column(name = "valid_until")
@@ -51,7 +51,7 @@ public class StaffSchedule {
 		LocalDate validFrom, LocalDate validUntil) {
 		this.id = id;
 		this.storeMemberId = storeMemberId;
-		this.dayOfWeek = dayOfWeek;
+		this.dayOfWeek = DayOfWeekValue.valueOf(dayOfWeek.name());
 		this.startTime = startTime;
 		this.endTime = endTime;
 		this.validFrom = validFrom;
@@ -62,7 +62,7 @@ public class StaffSchedule {
 		return storeMemberId;
 	}
 
-	public DayOfWeek getDayOfWeek() {
+	public DayOfWeekValue getDayOfWeek() {
 		return dayOfWeek;
 	}
 
@@ -72,6 +72,10 @@ public class StaffSchedule {
 
 	public LocalTime getEndTime() {
 		return endTime;
+	}
+
+	public UUID getId() {
+		return id;
 	}
 
 	public LocalDate getValidFrom() {

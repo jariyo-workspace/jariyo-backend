@@ -6,3 +6,4 @@ public enum StoreStatus {
 	TEMPORARILY_CLOSED,
 	CLOSED
 }
+

@@ -28,6 +28,7 @@ import com.example.jariyo_backend.domain.reservation.entity.Reservation;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
 import com.example.jariyo_backend.domain.reservation.repository.ReservationRepository;
 import com.example.jariyo_backend.domain.store.entity.BusinessHour;
+import com.example.jariyo_backend.domain.store.entity.DayOfWeekValue;
 import com.example.jariyo_backend.domain.store.entity.ScheduleException;
 import com.example.jariyo_backend.domain.store.entity.ScheduleExceptionType;
 import com.example.jariyo_backend.domain.store.entity.ServiceStatus;
@@ -138,7 +139,7 @@ public class AvailabilityService {
 				from.atStartOfDay(zoneId).toInstant(), to.plusDays(1).atStartOfDay(zoneId).toInstant())
 			.stream()
 			.collect(Collectors.groupingBy(Reservation::getAssignedStaffId));
-		Map<java.time.DayOfWeek, List<BusinessHour>> businessHoursByDay = businessHourRepository.findAllByStoreId(storeId)
+		Map<DayOfWeekValue, List<BusinessHour>> businessHoursByDay = businessHourRepository.findAllByStoreId(storeId)
 			.stream()
 			.collect(Collectors.groupingBy(BusinessHour::getDayOfWeek));
 
@@ -183,8 +184,9 @@ public class AvailabilityService {
 		StorePolicy policy, StoreServiceDefinition serviceDefinition, List<StoreMember> candidates,
 		Map<UUID, StaffService> staffServices, Map<UUID, List<StaffSchedule>> schedulesByStaffId,
 		Map<UUID, Map<LocalDate, List<StaffScheduleException>>> staffExceptions, Map<UUID, List<Reservation>> reservationsByStaffId,
-		Map<java.time.DayOfWeek, List<BusinessHour>> businessHoursByDay, List<ScheduleException> storeExceptions) {
-		List<TimeRange> storeRanges = resolveStoreRanges(date, businessHoursByDay.getOrDefault(date.getDayOfWeek(), List.of()),
+		Map<DayOfWeekValue, List<BusinessHour>> businessHoursByDay, List<ScheduleException> storeExceptions) {
+		DayOfWeekValue dayOfWeek = DayOfWeekValue.valueOf(date.getDayOfWeek().name());
+		List<TimeRange> storeRanges = resolveStoreRanges(date, businessHoursByDay.getOrDefault(dayOfWeek, List.of()),
 			storeExceptions);
 		if (storeRanges.isEmpty()) {
 			return List.of();
@@ -268,8 +270,9 @@ public class AvailabilityService {
 		if (exceptions.stream().anyMatch(exception -> exception.getType() == StaffScheduleExceptionType.DAY_OFF)) {
 			return List.of();
 		}
+		DayOfWeekValue dayOfWeek = DayOfWeekValue.valueOf(date.getDayOfWeek().name());
 		List<TimeRange> baseRanges = schedules.stream()
-			.filter(schedule -> schedule.getDayOfWeek() == date.getDayOfWeek())
+			.filter(schedule -> schedule.getDayOfWeek() == dayOfWeek)
 			.filter(schedule -> !date.isBefore(schedule.getValidFrom()))
 			.filter(schedule -> schedule.getValidUntil() == null || !date.isAfter(schedule.getValidUntil()))
 			.map(schedule -> new TimeRange(date.atTime(schedule.getStartTime()), date.atTime(schedule.getEndTime())))

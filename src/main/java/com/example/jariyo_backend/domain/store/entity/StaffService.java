@@ -44,7 +44,15 @@ public class StaffService {
 		return storeMemberId;
 	}
 
+	public UUID getServiceId() {
+		return serviceId;
+	}
+
 	public Integer getCustomDurationMinutes() {
 		return customDurationMinutes;
+	}
+
+	public boolean isActive() {
+		return active;
 	}
 }

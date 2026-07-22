@@ -13,11 +13,14 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "store")
-public class Store {
+@Table(name = "service")
+public class ServiceOffering {
 	@Id
 	@UuidGenerator(style = UuidGenerator.Style.VERSION_7)
 	private UUID id;
+
+	@Column(name = "store_id", nullable = false)
+	private UUID storeId;
 
 	@Column(nullable = false, length = 200)
 	private String name;
@@ -25,18 +28,18 @@ public class Store {
 	@Column(length = 1000)
 	private String description;
 
-	@Column(name = "phone_number", nullable = false, length = 32)
-	private String phoneNumber;
+	@Column(name = "duration_minutes", nullable = false)
+	private int durationMinutes;
 
-	@Column(nullable = false, length = 500)
-	private String address;
+	@Column(name = "cleanup_minutes", nullable = false)
+	private int cleanupMinutes;
 
-	@Column(nullable = false, length = 64)
-	private String timezone;
+	@Column(nullable = false)
+	private int capacity;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 32)
-	private StoreStatus status;
+	private ServiceStatus status;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
@@ -46,26 +49,15 @@ public class Store {
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
 
-	protected Store() {
-	}
-
-	public Store(UUID id) {
-		this.id = id;
-	}
-
-	public Store(UUID id, String name, String description, String phoneNumber, String address, String timezone,
-		StoreStatus status) {
-		this.id = id;
-		this.name = name;
-		this.description = description;
-		this.phoneNumber = phoneNumber;
-		this.address = address;
-		this.timezone = timezone;
-		this.status = status;
+	protected ServiceOffering() {
 	}
 
 	public UUID getId() {
 		return id;
+	}
+
+	public UUID getStoreId() {
+		return storeId;
 	}
 
 	public String getName() {
@@ -76,27 +68,19 @@ public class Store {
 		return description;
 	}
 
-	public String getPhoneNumber() {
-		return phoneNumber;
+	public int getDurationMinutes() {
+		return durationMinutes;
 	}
 
-	public String getAddress() {
-		return address;
+	public int getCleanupMinutes() {
+		return cleanupMinutes;
 	}
 
-	public String getTimezone() {
-		return timezone;
+	public int getCapacity() {
+		return capacity;
 	}
 
-	public StoreStatus getStatus() {
+	public ServiceStatus getStatus() {
 		return status;
-	}
-
-	public Instant getCreatedAt() {
-		return createdAt;
-	}
-
-	public Instant getUpdatedAt() {
-		return updatedAt;
 	}
 }

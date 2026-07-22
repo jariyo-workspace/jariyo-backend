@@ -5,3 +5,4 @@ public enum StaffScheduleExceptionType {
 	CUSTOM_WORKING_HOURS,
 	BLOCKED_PERIOD
 }
+

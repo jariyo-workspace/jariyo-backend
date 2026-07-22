@@ -23,7 +23,7 @@ public class BusinessHour {
 
 	@Enumerated(EnumType.STRING)
 	@Column(name = "day_of_week", nullable = false, length = 16)
-	private DayOfWeek dayOfWeek;
+	private DayOfWeekValue dayOfWeek;
 
 	@Column(name = "open_time")
 	private LocalTime openTime;
@@ -41,13 +41,17 @@ public class BusinessHour {
 		boolean closed) {
 		this.id = id;
 		this.storeId = storeId;
-		this.dayOfWeek = dayOfWeek;
+		this.dayOfWeek = DayOfWeekValue.valueOf(dayOfWeek.name());
 		this.openTime = openTime;
 		this.closeTime = closeTime;
 		this.closed = closed;
 	}
 
-	public DayOfWeek getDayOfWeek() {
+	public UUID getStoreId() {
+		return storeId;
+	}
+
+	public DayOfWeekValue getDayOfWeek() {
 		return dayOfWeek;
 	}
 
@@ -61,5 +65,9 @@ public class BusinessHour {
 
 	public boolean isClosed() {
 		return closed;
+	}
+
+	public UUID getId() {
+		return id;
 	}
 }

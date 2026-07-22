@@ -7,6 +7,7 @@ import java.util.UUID;
 import com.example.jariyo_backend.common.config.JwtProperties;
 import com.example.jariyo_backend.domain.auth.dto.AccessToken;
 import com.example.jariyo_backend.domain.user.entity.UserAccount;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -20,6 +21,7 @@ public class JwtTokenService {
 	private final JwtProperties properties;
 	private final Clock clock;
 
+	@Autowired
 	public JwtTokenService(JwtEncoder jwtEncoder, JwtProperties properties) {
 		this(jwtEncoder, properties, Clock.systemUTC());
 	}

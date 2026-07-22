@@ -4,3 +4,4 @@ public enum ServiceStatus {
 	ACTIVE,
 	INACTIVE
 }
+

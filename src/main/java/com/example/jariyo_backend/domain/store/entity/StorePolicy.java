@@ -7,21 +7,22 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.annotations.UuidGenerator;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 
 @Entity
-@Table(name = "store_policy", uniqueConstraints = {
-	@UniqueConstraint(name = "uk_store_policy_store", columnNames = "store_id")
-})
+@Table(name = "store_policy")
 public class StorePolicy {
 	@Id
 	@UuidGenerator(style = UuidGenerator.Style.VERSION_7)
 	private UUID id;
 
-	@Column(name = "store_id", nullable = false)
-	private UUID storeId;
+	@OneToOne(fetch = FetchType.LAZY, optional = false)
+	@JoinColumn(name = "store_id", nullable = false, unique = true)
+	private Store store;
 
 	@Column(name = "booking_open_days", nullable = false)
 	private int bookingOpenDays;
@@ -75,7 +76,7 @@ public class StorePolicy {
 		int noShowAfterMinutes, int reservationHoldMinutes, int slotOfferExpirationMinutes,
 		int walkInCallTimeoutMinutes, boolean waitlistEnabled, boolean walkInEnabled, boolean autoNoShowEnabled) {
 		this.id = id;
-		this.storeId = storeId;
+		this.store = new Store(storeId);
 		this.bookingOpenDays = bookingOpenDays;
 		this.minimumBookingNoticeMinutes = minimumBookingNoticeMinutes;
 		this.cancellationDeadlineMinutes = cancellationDeadlineMinutes;
@@ -98,7 +99,43 @@ public class StorePolicy {
 		return minimumBookingNoticeMinutes;
 	}
 
+	public int getCancellationDeadlineMinutes() {
+		return cancellationDeadlineMinutes;
+	}
+
+	public int getCheckInOpenBeforeMinutes() {
+		return checkInOpenBeforeMinutes;
+	}
+
+	public int getLateToleranceMinutes() {
+		return lateToleranceMinutes;
+	}
+
+	public int getNoShowAfterMinutes() {
+		return noShowAfterMinutes;
+	}
+
+	public int getReservationHoldMinutes() {
+		return reservationHoldMinutes;
+	}
+
+	public int getSlotOfferExpirationMinutes() {
+		return slotOfferExpirationMinutes;
+	}
+
+	public int getWalkInCallTimeoutMinutes() {
+		return walkInCallTimeoutMinutes;
+	}
+
 	public boolean isWaitlistEnabled() {
 		return waitlistEnabled;
+	}
+
+	public boolean isWalkInEnabled() {
+		return walkInEnabled;
+	}
+
+	public boolean isAutoNoShowEnabled() {
+		return autoNoShowEnabled;
 	}
 }

@@ -19,6 +19,7 @@ import com.example.jariyo_backend.domain.auth.exception.RefreshTokenExpiredExcep
 import com.example.jariyo_backend.domain.auth.exception.RefreshTokenReuseException;
 import com.example.jariyo_backend.domain.auth.repository.RefreshTokenRepository;
 import com.example.jariyo_backend.domain.user.entity.UserAccount;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +32,7 @@ public class RefreshTokenService {
 	private final SecureRandom secureRandom;
 	private final Clock clock;
 
+	@Autowired
 	public RefreshTokenService(RefreshTokenRepository refreshTokenRepository, RefreshTokenProperties properties) {
 		this(refreshTokenRepository, properties, new SecureRandom(), Clock.systemUTC());
 	}
@@ -76,18 +78,18 @@ public class RefreshTokenService {
 			return;
 		}
 		String tokenHash = hash(rawToken);
-		refreshTokenRepository.findByTokenHash(tokenHash).ifPresent(snapshot -> {
-			refreshTokenRepository.lockFamily(snapshot.getFamilyId());
+		refreshTokenRepository.findFamilyIdByTokenHash(tokenHash).ifPresent(familyId -> {
+			refreshTokenRepository.lockFamily(familyId);
 			refreshTokenRepository.findLockedByTokenHash(tokenHash)
-				.ifPresent(token -> revokeFamily(token.getFamilyId(), clock.instant()));
+				.ifPresent(token -> revokeFamily(familyId, clock.instant()));
 		});
 	}
 
 	private RefreshToken findWithFamilyLock(String rawToken) {
 		String tokenHash = hash(rawToken);
-		RefreshToken snapshot = refreshTokenRepository.findByTokenHash(tokenHash)
+		UUID familyId = refreshTokenRepository.findFamilyIdByTokenHash(tokenHash)
 			.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
-		refreshTokenRepository.lockFamily(snapshot.getFamilyId());
+		refreshTokenRepository.lockFamily(familyId);
 		return refreshTokenRepository.findLockedByTokenHash(tokenHash)
 			.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 	}

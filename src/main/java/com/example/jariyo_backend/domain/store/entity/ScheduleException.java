@@ -36,7 +36,7 @@ public class ScheduleException {
 	@Column(name = "end_time")
 	private LocalTime endTime;
 
-	@Column(length = 255)
+	@Column(length = 500)
 	private String reason;
 
 	@Column(name = "created_by_member_id")
@@ -61,6 +61,14 @@ public class ScheduleException {
 		this.createdByMemberId = createdByMemberId;
 	}
 
+	public UUID getId() {
+		return id;
+	}
+
+	public UUID getStoreId() {
+		return storeId;
+	}
+
 	public LocalDate getTargetDate() {
 		return targetDate;
 	}
@@ -75,5 +83,13 @@ public class ScheduleException {
 
 	public LocalTime getEndTime() {
 		return endTime;
+	}
+
+	public String getReason() {
+		return reason;
+	}
+
+	public UUID getCreatedByMemberId() {
+		return createdByMemberId;
 	}
 }

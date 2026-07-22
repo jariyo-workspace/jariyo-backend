@@ -8,4 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ScheduleExceptionRepository extends JpaRepository<ScheduleException, UUID> {
 	List<ScheduleException> findAllByStoreIdAndTargetDateBetween(UUID storeId, LocalDate from, LocalDate to);
+
+	List<ScheduleException> findAllByStoreIdOrderByTargetDateAscCreatedAtAsc(UUID storeId);
 }

@@ -36,7 +36,7 @@ public class StaffScheduleException {
 	@Column(name = "end_time")
 	private LocalTime endTime;
 
-	@Column(length = 255)
+	@Column(length = 500)
 	private String reason;
 
 	@Column(name = "created_by_member_id")
@@ -49,16 +49,8 @@ public class StaffScheduleException {
 	protected StaffScheduleException() {
 	}
 
-	public StaffScheduleException(UUID id, UUID storeMemberId, LocalDate targetDate, StaffScheduleExceptionType type,
-		LocalTime startTime, LocalTime endTime, String reason, UUID createdByMemberId) {
-		this.id = id;
-		this.storeMemberId = storeMemberId;
-		this.targetDate = targetDate;
-		this.type = type;
-		this.startTime = startTime;
-		this.endTime = endTime;
-		this.reason = reason;
-		this.createdByMemberId = createdByMemberId;
+	public UUID getId() {
+		return id;
 	}
 
 	public UUID getStoreMemberId() {
@@ -80,4 +72,9 @@ public class StaffScheduleException {
 	public LocalTime getEndTime() {
 		return endTime;
 	}
+
+	public String getReason() {
+		return reason;
+	}
 }
+

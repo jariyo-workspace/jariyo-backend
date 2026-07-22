@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface BusinessHourRepository extends JpaRepository<BusinessHour, UUID> {
 	List<BusinessHour> findAllByStoreId(UUID storeId);
+
+	List<BusinessHour> findAllByStoreIdOrderByDayOfWeekAsc(UUID storeId);
 }
