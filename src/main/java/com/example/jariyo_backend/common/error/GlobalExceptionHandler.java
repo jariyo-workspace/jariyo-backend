@@ -2,7 +2,11 @@ package com.example.jariyo_backend.common.error;
 
 import com.example.jariyo_backend.common.api.ApiResponse;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -17,6 +21,23 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	public ResponseEntity<ApiResponse<Void>> handleValidationException(MethodArgumentNotValidException exception) {
+		return ResponseEntity.badRequest()
+			.body(ApiResponse.failure(ErrorCode.BAD_REQUEST.getCode(), ErrorCode.BAD_REQUEST.getMessage()));
+	}
+
+	@ExceptionHandler(DataIntegrityViolationException.class)
+	public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException exception) {
+		String message = exception.getMostSpecificCause().getMessage();
+		ErrorCode errorCode = message != null && (message.contains("uk_walk_in_active_customer")
+			|| message.contains("uk_walk_in_active_guest_phone"))
+			? ErrorCode.WALK_IN_ALREADY_REGISTERED : ErrorCode.CONFLICT;
+		return ResponseEntity.status(errorCode.getStatus())
+			.body(ApiResponse.failure(errorCode.getCode(), errorCode.getMessage()));
+	}
+
+	@ExceptionHandler({HttpMessageNotReadableException.class, ServletRequestBindingException.class,
+		MethodArgumentTypeMismatchException.class})
+	public ResponseEntity<ApiResponse<Void>> handleBadRequest(Exception exception) {
 		return ResponseEntity.badRequest()
 			.body(ApiResponse.failure(ErrorCode.BAD_REQUEST.getCode(), ErrorCode.BAD_REQUEST.getMessage()));
 	}
