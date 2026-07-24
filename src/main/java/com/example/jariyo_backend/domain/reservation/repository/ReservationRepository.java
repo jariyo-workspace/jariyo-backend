@@ -47,4 +47,16 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 		@Param("statuses") Collection<ReservationStatus> statuses,
 		@Param("rangeStart") Instant rangeStart,
 		@Param("rangeEnd") Instant rangeEnd);
+
+	@Query("""
+		select r from Reservation r
+		where r.storeId = :storeId
+			and r.startAt >= :rangeStart
+			and r.startAt < :rangeEnd
+		order by r.startAt asc
+		""")
+	List<Reservation> findDailyReservations(
+		@Param("storeId") UUID storeId,
+		@Param("rangeStart") Instant rangeStart,
+		@Param("rangeEnd") Instant rangeEnd);
 }

@@ -39,4 +39,16 @@ public interface SlotOfferRepository extends JpaRepository<SlotOffer, UUID> {
 
 	boolean existsByStoreIdAndServiceIdAndStaffIdAndStartAtAndStatus(
 		UUID storeId, UUID serviceId, UUID staffId, Instant startAt, SlotOfferStatus status);
+
+	@Query("""
+		select o from SlotOffer o
+		where o.storeId = :storeId
+			and o.status = :status
+			and o.expiresAt > :now
+		order by o.expiresAt asc
+		""")
+	List<SlotOffer> findActiveByStoreIdAndStatus(
+		@Param("storeId") UUID storeId,
+		@Param("status") SlotOfferStatus status,
+		@Param("now") Instant now);
 }
