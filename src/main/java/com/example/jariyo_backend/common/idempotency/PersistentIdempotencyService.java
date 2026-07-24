@@ -10,6 +10,7 @@ import java.util.function.Supplier;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.cfg.DateTimeFeature;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 
@@ -76,6 +77,8 @@ public class PersistentIdempotencyService {
 	}
 
 	private <T> T read(String value, Class<T> type) {
-		return objectMapper.readValue(value, type);
+		return objectMapper.readerFor(type)
+			.without(DateTimeFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE)
+			.readValue(value);
 	}
 }

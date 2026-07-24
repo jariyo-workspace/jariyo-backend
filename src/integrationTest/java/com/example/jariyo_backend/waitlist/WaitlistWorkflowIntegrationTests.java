@@ -10,10 +10,15 @@ import java.time.ZonedDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import com.example.jariyo_backend.common.error.BusinessException;
+import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationSource;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
 import com.example.jariyo_backend.domain.reservation.repository.ReservationRepository;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService;
+import com.example.jariyo_backend.domain.reservation.service.ReservationService.CreateReservationCommand;
 import com.example.jariyo_backend.domain.waitlist.entity.SlotOfferStatus;
 import com.example.jariyo_backend.domain.waitlist.entity.StaffPreferenceType;
 import com.example.jariyo_backend.domain.waitlist.entity.WaitlistStatus;
@@ -37,6 +42,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers
 @SpringBootTest
@@ -78,8 +84,11 @@ class WaitlistWorkflowIntegrationTests {
 		jdbcTemplate.update("DELETE FROM slot_offer_status_history");
 		jdbcTemplate.update("DELETE FROM slot_offer");
 		jdbcTemplate.update("DELETE FROM waitlist_entry");
+		jdbcTemplate.update("DELETE FROM reservation_status_history");
 		jdbcTemplate.update("DELETE FROM reservation");
+		jdbcTemplate.update("DELETE FROM staff_schedule WHERE store_member_id = ?", STAFF_MEMBER_ID);
 		jdbcTemplate.update("DELETE FROM staff_service WHERE service_id = ?", SERVICE_ID);
+		jdbcTemplate.update("DELETE FROM business_hour WHERE id = '00000000-0000-7000-8000-000000000810'");
 		jdbcTemplate.update("DELETE FROM service WHERE id = ?", SERVICE_ID);
 		jdbcTemplate.update("DELETE FROM store_member WHERE id = ?", STAFF_MEMBER_ID);
 		jdbcTemplate.update("DELETE FROM customer_profile WHERE id in (?, ?)", WAITLIST_CUSTOMER_ID, RESERVATION_CUSTOMER_ID);
@@ -102,6 +111,16 @@ class WaitlistWorkflowIntegrationTests {
 			INSERT INTO staff_service (id, store_member_id, service_id, active)
 			VALUES ('00000000-0000-7000-8000-000000000809', ?, ?, true)
 			""", STAFF_MEMBER_ID, SERVICE_ID);
+		LocalDate targetDate = LocalDate.now(ZoneId.of("Asia/Seoul")).plusDays(2);
+		jdbcTemplate.update("""
+			INSERT INTO business_hour (id, store_id, day_of_week, open_time, close_time, is_closed)
+			VALUES ('00000000-0000-7000-8000-000000000810', ?, ?, '09:00', '18:00', false)
+			""", STORE_ID, targetDate.getDayOfWeek().name());
+		jdbcTemplate.update("""
+			INSERT INTO staff_schedule
+				(id, store_member_id, day_of_week, start_time, end_time, valid_from, valid_until, created_at)
+			VALUES ('00000000-0000-7000-8000-000000000811', ?, ?, '09:00', '18:00', ?, null, now())
+			""", STAFF_MEMBER_ID, targetDate.getDayOfWeek().name(), targetDate.minusDays(1));
 	}
 
 	@AfterEach
@@ -118,7 +137,7 @@ class WaitlistWorkflowIntegrationTests {
 		insertReservation(targetDate, java.time.LocalTime.of(15, 0));
 
 		reservationService.cancelMine(RESERVATION_USER_ID, RESERVATION_ID, "reservation-cancel",
-			new ReservationService.CancelReservationCommand("CUSTOMER_SCHEDULE_CHANGED", "일정 변경"));
+			new ReservationService.CancelReservationCommand("일정 변경"));
 
 		List<SlotOfferSummary> offers = waitlistService.listOffers(WAITLIST_USER_ID, SlotOfferStatus.PENDING);
 		assertEquals(1, offers.size());
@@ -142,7 +161,7 @@ class WaitlistWorkflowIntegrationTests {
 		insertReservation(targetDate, java.time.LocalTime.of(11, 0));
 
 		reservationService.cancelMine(RESERVATION_USER_ID, RESERVATION_ID, "reservation-cancel-expire",
-			new ReservationService.CancelReservationCommand("CUSTOMER_SCHEDULE_CHANGED", "일정 변경"));
+			new ReservationService.CancelReservationCommand("일정 변경"));
 		UUID offerId = waitlistService.listOffers(WAITLIST_USER_ID, SlotOfferStatus.PENDING).get(0).id();
 		jdbcTemplate.update("UPDATE slot_offer SET expires_at = ? WHERE id = ?",
 			Timestamp.from(Instant.now().minusSeconds(5)), offerId);
@@ -152,6 +171,63 @@ class WaitlistWorkflowIntegrationTests {
 		assertEquals(SlotOfferStatus.EXPIRED, slotOfferRepository.findById(offerId).orElseThrow().getStatus());
 		assertEquals(WaitlistStatus.WAITING, waitlistEntryRepository.findById(waitlist.id()).orElseThrow().getStatus());
 		assertFalse(waitlistService.listOffers(WAITLIST_USER_ID, SlotOfferStatus.PENDING).stream().anyMatch(offer -> offer.id().equals(offerId)));
+	}
+
+	@Test
+	void directBookingAndWaitlistAcceptanceCannotBothTakeCancelledSlot() {
+		LocalDate targetDate = LocalDate.now(ZoneId.of("Asia/Seoul")).plusDays(2);
+		WaitlistSummary waitlist = waitlistService.create(WAITLIST_USER_ID, "waitlist-race",
+			new CreateWaitlistCommand(STORE_ID, SERVICE_ID, STAFF_MEMBER_ID, StaffPreferenceType.SPECIFIC_ONLY,
+				targetDate, java.time.LocalTime.of(14, 0), java.time.LocalTime.of(16, 0), 1));
+		insertReservation(targetDate, java.time.LocalTime.of(15, 0));
+		reservationService.cancelMine(RESERVATION_USER_ID, RESERVATION_ID, "cancel-race",
+			new ReservationService.CancelReservationCommand("일정 변경"));
+		UUID offerId = waitlistService.listOffers(WAITLIST_USER_ID, SlotOfferStatus.PENDING).get(0).id();
+		CountDownLatch ready = new CountDownLatch(2);
+		CountDownLatch start = new CountDownLatch(1);
+
+		CompletableFuture<ErrorCode> accept = CompletableFuture.supplyAsync(() -> runConcurrently(ready, start,
+			() -> waitlistService.accept(WAITLIST_USER_ID, offerId, "accept-race")));
+		CompletableFuture<ErrorCode> direct = CompletableFuture.supplyAsync(() -> runConcurrently(ready, start,
+			() -> reservationService.create(RESERVATION_USER_ID, "direct-race", new CreateReservationCommand(
+				STORE_ID, SERVICE_ID, STAFF_MEMBER_ID,
+				ZonedDateTime.of(targetDate, java.time.LocalTime.of(15, 0), ZoneId.of("Asia/Seoul")).toOffsetDateTime(),
+				1, null))));
+		try {
+			ready.await();
+			start.countDown();
+			ErrorCode acceptResult = accept.join();
+			ErrorCode directResult = direct.join();
+
+			assertEquals(1, (acceptResult == null ? 1 : 0) + (directResult == null ? 1 : 0));
+			assertTrue(acceptResult == ErrorCode.SLOT_OFFER_NO_LONGER_AVAILABLE
+				|| directResult == ErrorCode.RESERVATION_SLOT_ALREADY_TAKEN);
+			assertEquals(1, reservationRepository.findAll().stream()
+				.filter(reservation -> reservation.getStatus() == ReservationStatus.CONFIRMED)
+				.count());
+			assertEquals(2, reservationRepository.count());
+			if (acceptResult == null) {
+				assertEquals(WaitlistStatus.RESERVED,
+					waitlistEntryRepository.findById(waitlist.id()).orElseThrow().getStatus());
+			}
+		} catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException(exception);
+		}
+	}
+
+	private ErrorCode runConcurrently(CountDownLatch ready, CountDownLatch start, Runnable action) {
+		ready.countDown();
+		try {
+			start.await();
+			action.run();
+			return null;
+		} catch (BusinessException exception) {
+			return exception.getErrorCode();
+		} catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException(exception);
+		}
 	}
 
 	private void insertReservation(LocalDate date, java.time.LocalTime time) {

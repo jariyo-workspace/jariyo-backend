@@ -14,6 +14,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ReservationRepository extends JpaRepository<Reservation, UUID> {
+	List<Reservation> findAllByCustomerIdOrderByStartAtDescIdDesc(UUID customerId);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select r from Reservation r where r.id = :id")
 	Optional<Reservation> findByIdForUpdate(@Param("id") UUID id);
@@ -57,6 +59,19 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 		""")
 	List<Reservation> findDailyReservations(
 		@Param("storeId") UUID storeId,
+		@Param("rangeStart") Instant rangeStart,
+		@Param("rangeEnd") Instant rangeEnd);
+
+	@Query("""
+		select case when count(r) > 0 then true else false end from Reservation r
+		where r.customerId = :customerId
+			and r.status in :statuses
+			and r.occupiedUntil > :rangeStart
+			and r.startAt < :rangeEnd
+		""")
+	boolean existsOverlappingCustomerReservation(
+		@Param("customerId") UUID customerId,
+		@Param("statuses") Collection<ReservationStatus> statuses,
 		@Param("rangeStart") Instant rangeStart,
 		@Param("rangeEnd") Instant rangeEnd);
 }

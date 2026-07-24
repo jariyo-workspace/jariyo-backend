@@ -108,11 +108,12 @@ public class Reservation {
 		this.partySize = partySize;
 	}
 
-	public static Reservation confirmedFromWaitlist(UUID storeId, UUID customerId, UUID serviceId, UUID assignedStaffId,
-		Instant startAt, Instant serviceEndAt, Instant occupiedUntil, int partySize, Instant confirmedAt) {
-		Reservation reservation = new Reservation(null, storeId, customerId, serviceId, assignedStaffId,
-			ReservationSource.WAITLIST_OFFER, ReservationStatus.CONFIRMED, startAt, serviceEndAt, occupiedUntil,
-			partySize);
+	public static Reservation confirmed(UUID storeId, UUID customerId, UUID serviceId, UUID assignedStaffId,
+		ReservationSource source, Instant startAt, Instant serviceEndAt, Instant occupiedUntil, int partySize,
+		String customerNote, Instant confirmedAt) {
+		Reservation reservation = new Reservation(null, storeId, customerId, serviceId, assignedStaffId, source,
+			ReservationStatus.CONFIRMED, startAt, serviceEndAt, occupiedUntil, partySize);
+		reservation.customerNote = customerNote;
 		reservation.confirmedAt = confirmedAt;
 		return reservation;
 	}
@@ -187,5 +188,13 @@ public class Reservation {
 
 	public Instant getConfirmedAt() {
 		return confirmedAt;
+	}
+
+	public String getCustomerNote() {
+		return customerNote;
+	}
+
+	public Instant getCreatedAt() {
+		return createdAt;
 	}
 }

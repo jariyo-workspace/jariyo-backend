@@ -14,7 +14,7 @@ import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.common.idempotency.PersistentIdempotencyService;
 import com.example.jariyo_backend.domain.reservation.entity.Reservation;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
-import com.example.jariyo_backend.domain.reservation.repository.ReservationRepository;
+import com.example.jariyo_backend.domain.reservation.service.ReservationBookingService;
 import com.example.jariyo_backend.domain.store.entity.ServiceOffering;
 import com.example.jariyo_backend.domain.store.entity.ServiceStatus;
 import com.example.jariyo_backend.domain.store.entity.Store;
@@ -48,9 +48,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class WaitlistService {
 	private static final EnumSet<WaitlistStatus> ACTIVE_WAITLIST_STATUSES = EnumSet.of(
 		WaitlistStatus.WAITING, WaitlistStatus.OFFERED);
-	private static final EnumSet<ReservationStatus> ACTIVE_RESERVATION_STATUSES = EnumSet.of(
-		ReservationStatus.HELD, ReservationStatus.CONFIRMED, ReservationStatus.CHECKED_IN, ReservationStatus.IN_SERVICE);
-
 	private final WaitlistEntryRepository waitlistEntryRepository;
 	private final SlotOfferRepository slotOfferRepository;
 	private final SlotOfferStatusHistoryRepository slotOfferStatusHistoryRepository;
@@ -60,7 +57,7 @@ public class WaitlistService {
 	private final ServiceRepository serviceRepository;
 	private final StaffServiceRepository staffServiceRepository;
 	private final StoreMemberRepository storeMemberRepository;
-	private final ReservationRepository reservationRepository;
+	private final ReservationBookingService reservationBookingService;
 	private final PersistentIdempotencyService idempotencyService;
 	private final EntityManager entityManager;
 	private final Clock clock;
@@ -70,7 +67,7 @@ public class WaitlistService {
 		CustomerProfileRepository customerProfileRepository, StoreRepository storeRepository,
 		StorePolicyRepository storePolicyRepository, ServiceRepository serviceRepository,
 		StaffServiceRepository staffServiceRepository,
-		StoreMemberRepository storeMemberRepository, ReservationRepository reservationRepository,
+		StoreMemberRepository storeMemberRepository, ReservationBookingService reservationBookingService,
 		PersistentIdempotencyService idempotencyService, EntityManager entityManager, Clock clock) {
 		this.waitlistEntryRepository = waitlistEntryRepository;
 		this.slotOfferRepository = slotOfferRepository;
@@ -81,7 +78,7 @@ public class WaitlistService {
 		this.serviceRepository = serviceRepository;
 		this.staffServiceRepository = staffServiceRepository;
 		this.storeMemberRepository = storeMemberRepository;
-		this.reservationRepository = reservationRepository;
+		this.reservationBookingService = reservationBookingService;
 		this.idempotencyService = idempotencyService;
 		this.entityManager = entityManager;
 		this.clock = clock;
@@ -203,14 +200,9 @@ public class WaitlistService {
 					throw new BusinessException(ErrorCode.SLOT_OFFER_EXPIRED);
 				}
 				if (entry.getStatus() != WaitlistStatus.OFFERED) throw new BusinessException(ErrorCode.WAITLIST_INVALID_STATE);
-				if (reservationRepository.existsOverlappingReservation(offer.getStoreId(), offer.getStaffId(),
-					ACTIVE_RESERVATION_STATUSES, offer.getStartAt(), offer.getOccupiedUntil())) {
-					expireOffer(offer, entry, now, "SLOT_TAKEN");
-					throw new BusinessException(ErrorCode.SLOT_OFFER_NO_LONGER_AVAILABLE);
-				}
-				Reservation reservation = reservationRepository.save(Reservation.confirmedFromWaitlist(
-					offer.getStoreId(), customer.getUserId(), offer.getServiceId(), offer.getStaffId(), offer.getStartAt(),
-					offer.getServiceEndAt(), offer.getOccupiedUntil(), entry.getPartySize(), now));
+				Reservation reservation = reservationBookingService.bookFromWaitlist(customer.getUserId(),
+					offer.getStoreId(), offer.getServiceId(), offer.getStaffId(), offer.getStartAt(),
+					offer.getServiceEndAt(), offer.getOccupiedUntil(), entry.getPartySize());
 				offer.accept(reservation.getId(), now);
 				entry.markReserved(now);
 				slotOfferStatusHistoryRepository.save(new SlotOfferStatusHistory(offer.getId(), SlotOfferStatus.PENDING,
