@@ -72,6 +72,10 @@ public class StoreServiceDefinition {
 		return storeId;
 	}
 
+	public String getName() {
+		return name;
+	}
+
 	public int getDurationMinutes() {
 		return durationMinutes;
 	}
@@ -82,5 +86,9 @@ public class StoreServiceDefinition {
 
 	public int getCapacity() {
 		return capacity;
+	}
+
+	public ServiceStatus getStatus() {
+		return status;
 	}
 }
