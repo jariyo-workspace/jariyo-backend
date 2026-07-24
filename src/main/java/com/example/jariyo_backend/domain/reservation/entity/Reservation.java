@@ -108,6 +108,39 @@ public class Reservation {
 		this.partySize = partySize;
 	}
 
+	public static Reservation confirmedFromWaitlist(UUID storeId, UUID customerId, UUID serviceId, UUID assignedStaffId,
+		Instant startAt, Instant serviceEndAt, Instant occupiedUntil, int partySize, Instant confirmedAt) {
+		Reservation reservation = new Reservation(null, storeId, customerId, serviceId, assignedStaffId,
+			ReservationSource.WAITLIST_OFFER, ReservationStatus.CONFIRMED, startAt, serviceEndAt, occupiedUntil,
+			partySize);
+		reservation.confirmedAt = confirmedAt;
+		return reservation;
+	}
+
+	public void cancelByCustomer(String reason, Instant cancelledAt, UUID customerId) {
+		this.status = ReservationStatus.CANCELLED;
+		this.cancellationReason = reason;
+		this.cancelledAt = cancelledAt;
+		this.cancelledByType = "CUSTOMER";
+		this.cancelledById = customerId;
+	}
+
+	public UUID getId() {
+		return id;
+	}
+
+	public UUID getStoreId() {
+		return storeId;
+	}
+
+	public UUID getCustomerId() {
+		return customerId;
+	}
+
+	public UUID getServiceId() {
+		return serviceId;
+	}
+
 	public UUID getAssignedStaffId() {
 		return assignedStaffId;
 	}
@@ -118,5 +151,41 @@ public class Reservation {
 
 	public Instant getOccupiedUntil() {
 		return occupiedUntil;
+	}
+
+	public ReservationSource getSource() {
+		return source;
+	}
+
+	public ReservationStatus getStatus() {
+		return status;
+	}
+
+	public Instant getServiceEndAt() {
+		return serviceEndAt;
+	}
+
+	public int getPartySize() {
+		return partySize;
+	}
+
+	public String getCancellationReason() {
+		return cancellationReason;
+	}
+
+	public String getCancelledByType() {
+		return cancelledByType;
+	}
+
+	public UUID getCancelledById() {
+		return cancelledById;
+	}
+
+	public Instant getCancelledAt() {
+		return cancelledAt;
+	}
+
+	public Instant getConfirmedAt() {
+		return confirmedAt;
 	}
 }

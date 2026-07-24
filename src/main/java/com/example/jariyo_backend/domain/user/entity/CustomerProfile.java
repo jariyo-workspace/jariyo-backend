@@ -55,6 +55,10 @@ public class CustomerProfile {
 		return id;
 	}
 
+	public UUID getUserId() {
+		return user.getId();
+	}
+
 	public String getDisplayName() {
 		return displayName;
 	}
