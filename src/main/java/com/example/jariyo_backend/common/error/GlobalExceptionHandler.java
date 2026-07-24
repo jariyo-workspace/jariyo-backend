@@ -30,7 +30,11 @@ public class GlobalExceptionHandler {
 		String message = exception.getMostSpecificCause().getMessage();
 		ErrorCode errorCode = message != null && (message.contains("uk_walk_in_active_customer")
 			|| message.contains("uk_walk_in_active_guest_phone"))
-			? ErrorCode.WALK_IN_ALREADY_REGISTERED : ErrorCode.CONFLICT;
+			? ErrorCode.WALK_IN_ALREADY_REGISTERED
+			: message != null && (message.contains("uk_slot_offer_pending_slot")
+				|| message.contains("uk_slot_offer_pending_waitlist"))
+				? ErrorCode.SLOT_OFFER_ALREADY_ACTIVE
+				: ErrorCode.CONFLICT;
 		return ResponseEntity.status(errorCode.getStatus())
 			.body(ApiResponse.failure(errorCode.getCode(), errorCode.getMessage()));
 	}
