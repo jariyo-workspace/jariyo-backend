@@ -125,6 +125,14 @@ public class WalkInEntry {
 		callExpiresAt = expiresAt;
 	}
 
+	public boolean belongsToCustomer(UUID customerId) {
+		return this.customerId != null && this.customerId.equals(customerId);
+	}
+
+	public boolean isCalled() {
+		return status == WalkInStatus.CALLED;
+	}
+
 	public void recall(Instant calledAt, Instant expiresAt) {
 		if (status != WalkInStatus.CALLED) throw new BusinessException(ErrorCode.WALK_IN_INVALID_STATE);
 		this.calledAt = calledAt;

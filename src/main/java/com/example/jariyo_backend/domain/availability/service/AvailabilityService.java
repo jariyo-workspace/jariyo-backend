@@ -11,6 +11,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -102,10 +103,29 @@ public class AvailabilityService {
 
 	public AvailabilityResponse getAvailability(UUID storeId, UUID serviceId, UUID staffId, LocalDate from,
 		LocalDate to, int partySize) {
+		validateRange(from, to, partySize);
+		AvailabilityContext context = loadContext(storeId, serviceId, staffId, from, to, partySize);
+
+		List<AvailabilityDateResponse> dates = new ArrayList<>();
+		for (LocalDate date = from; !date.isAfter(to); date = date.plusDays(1)) {
+			List<AvailabilitySlotResponse> slots = calculateSlotsForDate(date, context);
+			dates.add(new AvailabilityDateResponse(date, slots));
+		}
+
+		return new AvailabilityResponse(storeId, serviceId, staffId, dates);
+	}
+
+	private void validateRange(LocalDate from, LocalDate to, int partySize) {
 		if (from.isAfter(to)) {
 			throw new BusinessException(ErrorCode.INVALID_AVAILABILITY_RANGE);
 		}
+		if (partySize < 1) {
+			throw new BusinessException(ErrorCode.INVALID_PARTY_SIZE);
+		}
+	}
 
+	private AvailabilityContext loadContext(UUID storeId, UUID serviceId, UUID staffId, LocalDate from, LocalDate to,
+		int partySize) {
 		Store store = storeRepository.findByIdAndStatus(storeId, StoreStatus.ACTIVE)
 			.orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
 		StorePolicy policy = storePolicyRepository.findByStoreId(storeId)
@@ -116,42 +136,35 @@ public class AvailabilityService {
 		if (partySize > serviceDefinition.getCapacity()) {
 			throw new BusinessException(ErrorCode.INVALID_PARTY_SIZE);
 		}
-
 		ZoneId zoneId = ZoneId.of(store.getTimezone());
 		ZonedDateTime now = Instant.now(clock).atZone(zoneId);
 		List<StoreMember> candidates = resolveCandidateMembers(storeId, staffId);
 		Map<UUID, StaffService> staffServices = resolveStaffServices(serviceDefinition, candidates);
-		Map<UUID, List<StaffSchedule>> schedulesByStaffId = staffScheduleRepository
-			.findAllByStoreMemberIdIn(staffServices.keySet())
-			.stream()
+		return new AvailabilityContext(store, policy, serviceDefinition, zoneId, now, candidates, staffServices,
+			loadAvailabilityInputs(storeId, from, to, zoneId, staffServices.keySet()));
+	}
+
+	private AvailabilityInputs loadAvailabilityInputs(UUID storeId, LocalDate from, LocalDate to, ZoneId zoneId,
+		Collection<UUID> staffIds) {
+		Map<UUID, List<StaffSchedule>> schedulesByStaffId = staffScheduleRepository.findAllByStoreMemberIdIn(staffIds).stream()
 			.collect(Collectors.groupingBy(StaffSchedule::getStoreMemberId));
 		Map<LocalDate, List<ScheduleException>> storeExceptionsByDate = scheduleExceptionRepository
-			.findAllByStoreIdAndTargetDateBetween(storeId, from, to)
-			.stream()
+			.findAllByStoreIdAndTargetDateBetween(storeId, from, to).stream()
 			.collect(Collectors.groupingBy(ScheduleException::getTargetDate));
 		Map<UUID, Map<LocalDate, List<StaffScheduleException>>> staffExceptions = staffScheduleExceptionRepository
-			.findAllByStoreMemberIdInAndTargetDateBetween(staffServices.keySet(), from, to)
-			.stream()
+			.findAllByStoreMemberIdInAndTargetDateBetween(staffIds, from, to).stream()
 			.collect(Collectors.groupingBy(StaffScheduleException::getStoreMemberId,
 				Collectors.groupingBy(StaffScheduleException::getTargetDate)));
 		Map<UUID, List<Reservation>> reservationsByStaffId = reservationRepository
-			.findActiveReservationsForAvailability(storeId, staffServices.keySet(), ACTIVE_RESERVATION_STATUSES,
+			.findActiveReservationsForAvailability(storeId, staffIds, ACTIVE_RESERVATION_STATUSES,
 				from.atStartOfDay(zoneId).toInstant(), to.plusDays(1).atStartOfDay(zoneId).toInstant())
 			.stream()
 			.collect(Collectors.groupingBy(Reservation::getAssignedStaffId));
 		Map<DayOfWeekValue, List<BusinessHour>> businessHoursByDay = businessHourRepository.findAllByStoreId(storeId)
 			.stream()
 			.collect(Collectors.groupingBy(BusinessHour::getDayOfWeek));
-
-		List<AvailabilityDateResponse> dates = new ArrayList<>();
-		for (LocalDate date = from; !date.isAfter(to); date = date.plusDays(1)) {
-			List<AvailabilitySlotResponse> slots = calculateSlotsForDate(date, now, zoneId, policy, serviceDefinition,
-				candidates, staffServices, schedulesByStaffId, staffExceptions, reservationsByStaffId,
-				businessHoursByDay, storeExceptionsByDate.getOrDefault(date, List.of()));
-			dates.add(new AvailabilityDateResponse(date, slots));
-		}
-
-		return new AvailabilityResponse(storeId, serviceId, staffId, dates);
+		return new AvailabilityInputs(schedulesByStaffId, storeExceptionsByDate, staffExceptions,
+			reservationsByStaffId, businessHoursByDay);
 	}
 
 	private List<StoreMember> resolveCandidateMembers(UUID storeId, UUID staffId) {
@@ -180,26 +193,22 @@ public class AvailabilityService {
 			.collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (left, right) -> left, HashMap::new));
 	}
 
-	private List<AvailabilitySlotResponse> calculateSlotsForDate(LocalDate date, ZonedDateTime now, ZoneId zoneId,
-		StorePolicy policy, StoreServiceDefinition serviceDefinition, List<StoreMember> candidates,
-		Map<UUID, StaffService> staffServices, Map<UUID, List<StaffSchedule>> schedulesByStaffId,
-		Map<UUID, Map<LocalDate, List<StaffScheduleException>>> staffExceptions, Map<UUID, List<Reservation>> reservationsByStaffId,
-		Map<DayOfWeekValue, List<BusinessHour>> businessHoursByDay, List<ScheduleException> storeExceptions) {
+	private List<AvailabilitySlotResponse> calculateSlotsForDate(LocalDate date, AvailabilityContext context) {
 		DayOfWeekValue dayOfWeek = DayOfWeekValue.valueOf(date.getDayOfWeek().name());
-		List<TimeRange> storeRanges = resolveStoreRanges(date, businessHoursByDay.getOrDefault(dayOfWeek, List.of()),
-			storeExceptions);
+		List<TimeRange> storeRanges = resolveStoreRanges(date,
+			context.inputs().businessHoursByDay().getOrDefault(dayOfWeek, List.of()),
+			context.inputs().storeExceptionsByDate().getOrDefault(date, List.of()));
 		if (storeRanges.isEmpty()) {
 			return List.of();
 		}
 
-		ZonedDateTime bookingWindowEnd = now.truncatedTo(ChronoUnit.DAYS).plusDays(policy.getBookingOpenDays() + 1L);
-		ZonedDateTime minimumBookableTime = now.plusMinutes(policy.getMinimumBookingNoticeMinutes());
-		if (date.atStartOfDay(zoneId).isAfter(bookingWindowEnd)) {
+		BookingWindow bookingWindow = bookingWindow(context.now(), context.zoneId(), context.policy());
+		if (date.isAfter(bookingWindow.lastBookableDate())) {
 			return List.of();
 		}
 
-		List<StoreMember> sortedCandidates = candidates.stream()
-			.filter(member -> staffServices.containsKey(member.getId()))
+		List<StoreMember> sortedCandidates = context.candidates().stream()
+			.filter(member -> context.staffServices().containsKey(member.getId()))
 			.sorted(Comparator.comparing(StoreMember::getDisplayName).thenComparing(StoreMember::getId))
 			.toList();
 
@@ -207,21 +216,23 @@ public class AvailabilityService {
 		for (StoreMember member : sortedCandidates) {
 			UUID staffId = member.getId();
 			List<TimeRange> staffRanges = resolveStaffRanges(date,
-				schedulesByStaffId.getOrDefault(staffId, List.of()),
-				staffExceptions.getOrDefault(staffId, Map.of()).getOrDefault(date, List.of()));
+				context.inputs().schedulesByStaffId().getOrDefault(staffId, List.of()),
+				context.inputs().staffExceptions().getOrDefault(staffId, Map.of()).getOrDefault(date, List.of()));
 			if (staffRanges.isEmpty()) {
 				continue;
 			}
 			List<TimeRange> bookableRanges = intersect(storeRanges, staffRanges);
-			int durationMinutes = resolveServiceDuration(serviceDefinition, staffServices.get(staffId));
+			int durationMinutes = resolveServiceDuration(context.serviceDefinition(), context.staffServices().get(staffId));
 			Duration serviceDuration = Duration.ofMinutes(durationMinutes);
-			Duration occupiedDuration = serviceDuration.plusMinutes(serviceDefinition.getCleanupMinutes());
+			Duration occupiedDuration = serviceDuration.plusMinutes(context.serviceDefinition().getCleanupMinutes());
 			for (TimeRange range : bookableRanges) {
 				LocalDateTime cursor = ceilToSlot(range.start());
 				while (!cursor.plus(occupiedDuration).isAfter(range.end())) {
-					ZonedDateTime startAt = cursor.atZone(zoneId);
-					if (!startAt.isBefore(minimumBookableTime) && !startAt.isAfter(bookingWindowEnd)
-						&& isAvailable(reservationsByStaffId.getOrDefault(staffId, List.of()), startAt, occupiedDuration)) {
+					ZonedDateTime startAt = cursor.atZone(context.zoneId());
+					if (!startAt.isBefore(bookingWindow.minimumBookableAt())
+						&& !startAt.toLocalDate().isAfter(bookingWindow.lastBookableDate())
+						&& isAvailable(context.inputs().reservationsByStaffId().getOrDefault(staffId, List.of()),
+							startAt, occupiedDuration)) {
 						ZonedDateTime serviceEndAt = startAt.plus(serviceDuration);
 						ZonedDateTime occupiedUntil = startAt.plus(occupiedDuration);
 						slots.add(new AvailabilitySlotResponse(
@@ -359,5 +370,34 @@ public class AvailabilityService {
 	}
 
 	private record TimeRange(LocalDateTime start, LocalDateTime end) {
+	}
+
+	private BookingWindow bookingWindow(ZonedDateTime now, ZoneId zoneId, StorePolicy policy) {
+		return new BookingWindow(now.plusMinutes(policy.getMinimumBookingNoticeMinutes()),
+			now.withZoneSameInstant(zoneId).toLocalDate().plusDays(policy.getBookingOpenDays()));
+	}
+
+	private record BookingWindow(ZonedDateTime minimumBookableAt, LocalDate lastBookableDate) {
+	}
+
+	private record AvailabilityContext(
+		Store store,
+		StorePolicy policy,
+		StoreServiceDefinition serviceDefinition,
+		ZoneId zoneId,
+		ZonedDateTime now,
+		List<StoreMember> candidates,
+		Map<UUID, StaffService> staffServices,
+		AvailabilityInputs inputs
+	) {
+	}
+
+	private record AvailabilityInputs(
+		Map<UUID, List<StaffSchedule>> schedulesByStaffId,
+		Map<LocalDate, List<ScheduleException>> storeExceptionsByDate,
+		Map<UUID, Map<LocalDate, List<StaffScheduleException>>> staffExceptions,
+		Map<UUID, List<Reservation>> reservationsByStaffId,
+		Map<DayOfWeekValue, List<BusinessHour>> businessHoursByDay
+	) {
 	}
 }

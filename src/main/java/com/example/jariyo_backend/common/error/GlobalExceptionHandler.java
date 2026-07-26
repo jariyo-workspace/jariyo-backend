@@ -1,6 +1,7 @@
 package com.example.jariyo_backend.common.error;
 
 import com.example.jariyo_backend.common.api.ApiResponse;
+import com.example.jariyo_backend.common.api.ResponseSupport;
 import org.springframework.http.ResponseEntity;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -15,14 +16,12 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(BusinessException.class)
 	public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException exception) {
 		ErrorCode errorCode = exception.getErrorCode();
-		return ResponseEntity.status(errorCode.getStatus())
-			.body(ApiResponse.failure(errorCode.getCode(), exception.getMessage()));
+		return ResponseSupport.error(errorCode, exception.getMessage());
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	public ResponseEntity<ApiResponse<Void>> handleValidationException(MethodArgumentNotValidException exception) {
-		return ResponseEntity.badRequest()
-			.body(ApiResponse.failure(ErrorCode.BAD_REQUEST.getCode(), ErrorCode.BAD_REQUEST.getMessage()));
+		return ResponseSupport.error(ErrorCode.BAD_REQUEST);
 	}
 
 	@ExceptionHandler(DataIntegrityViolationException.class)
@@ -35,20 +34,17 @@ public class GlobalExceptionHandler {
 				|| message.contains("uk_slot_offer_pending_waitlist"))
 				? ErrorCode.SLOT_OFFER_ALREADY_ACTIVE
 				: ErrorCode.CONFLICT;
-		return ResponseEntity.status(errorCode.getStatus())
-			.body(ApiResponse.failure(errorCode.getCode(), errorCode.getMessage()));
+		return ResponseSupport.error(errorCode);
 	}
 
 	@ExceptionHandler({HttpMessageNotReadableException.class, ServletRequestBindingException.class,
 		MethodArgumentTypeMismatchException.class})
 	public ResponseEntity<ApiResponse<Void>> handleBadRequest(Exception exception) {
-		return ResponseEntity.badRequest()
-			.body(ApiResponse.failure(ErrorCode.BAD_REQUEST.getCode(), ErrorCode.BAD_REQUEST.getMessage()));
+		return ResponseSupport.error(ErrorCode.BAD_REQUEST);
 	}
 
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ApiResponse<Void>> handleUnexpectedException(Exception exception) {
-		return ResponseEntity.status(ErrorCode.INTERNAL_SERVER_ERROR.getStatus())
-			.body(ApiResponse.failure(ErrorCode.INTERNAL_SERVER_ERROR.getCode(), ErrorCode.INTERNAL_SERVER_ERROR.getMessage()));
+		return ResponseSupport.error(ErrorCode.INTERNAL_SERVER_ERROR);
 	}
 }

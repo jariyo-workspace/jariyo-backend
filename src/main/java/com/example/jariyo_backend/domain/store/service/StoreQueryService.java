@@ -1,7 +1,11 @@
 package com.example.jariyo_backend.domain.store.service;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.domain.store.entity.BusinessHour;
@@ -64,94 +68,117 @@ public class StoreQueryService {
 	}
 
 	public StoreDetail getStore(UUID storeId) {
-		Store store = storeRepository.findById(storeId)
-			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		Store store = getStoreOrThrow(storeId);
 		StorePolicy policy = storePolicyRepository.findByStore_Id(storeId).orElse(null);
 		List<BusinessHour> businessHours = businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId);
 		return StoreDetail.from(store, policy, businessHours);
 	}
 
 	public List<ServiceSummary> listServices(UUID storeId, boolean activeOnly) {
+		getStoreOrThrow(storeId);
 		List<ServiceOffering> services = activeOnly
 			? serviceRepository.findAllByStoreIdAndStatusOrderByCreatedAtAsc(storeId, ServiceStatus.ACTIVE)
 			: serviceRepository.findAllByStoreIdOrderByCreatedAtAsc(storeId);
+		Map<UUID, Long> availableStaffCounts = countAvailableStaffByService(services);
 		return services.stream()
-			.map(service -> ServiceSummary.from(service, countAvailableStaff(service.getId())))
+			.map(service -> ServiceSummary.from(service, availableStaffCounts.getOrDefault(service.getId(), 0L)))
 			.toList();
 	}
 
 	public List<ServiceStaffSummary> listServiceStaff(UUID storeId, UUID serviceId) {
+		getServiceOrThrow(storeId, serviceId);
 		List<StaffService> links = staffServiceRepository.findAllByServiceIdAndActiveTrueOrderByStoreMemberIdAsc(serviceId);
+		Map<UUID, StoreMember> membersById = getStoreMembersById(storeId,
+			links.stream().map(StaffService::getStoreMemberId).toList());
 		return links.stream()
-			.map(link -> {
-				StoreMember member = storeMemberRepository.findById(link.getStoreMemberId())
-					.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-				if (!storeId.equals(member.getStoreId())) {
-					throw new BusinessException(ErrorCode.NOT_FOUND);
-				}
-				return ServiceStaffSummary.from(member, link);
-			})
+			.map(link -> ServiceStaffSummary.from(getStoreMemberOrThrow(membersById, link.getStoreMemberId()), link))
 			.toList();
 	}
 
 	public List<StoreMemberSummary> listAdminStaff(UUID storeId) {
-		return storeMemberRepository.findAll().stream()
-			.filter(member -> storeId.equals(member.getStoreId()))
+		getStoreOrThrow(storeId);
+		return storeMemberRepository.findAllByStoreIdOrderByCreatedAtAsc(storeId).stream()
 			.map(StoreMemberSummary::from)
 			.toList();
 	}
 
 	public StoreMemberDetail getAdminStaff(UUID storeId, UUID staffId) {
-		StoreMember member = storeMemberRepository.findById(staffId)
-			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-		if (!storeId.equals(member.getStoreId())) {
-			throw new BusinessException(ErrorCode.NOT_FOUND);
-		}
-		return StoreMemberDetail.from(member);
+		return StoreMemberDetail.from(getStoreMemberOrThrow(storeId, staffId));
 	}
 
 	public List<StaffScheduleSummary> listStaffSchedules(UUID storeId, UUID staffId) {
-		ensureStaffInStore(storeId, staffId);
+		getStoreMemberOrThrow(storeId, staffId);
 		return staffScheduleRepository.findAllByStoreMemberIdOrderByDayOfWeekAscStartTimeAsc(staffId).stream()
 			.map(StaffScheduleSummary::from)
 			.toList();
 	}
 
 	public List<StaffScheduleExceptionSummary> listStaffScheduleExceptions(UUID storeId, UUID staffId) {
-		ensureStaffInStore(storeId, staffId);
+		getStoreMemberOrThrow(storeId, staffId);
 		return staffScheduleExceptionRepository.findAllByStoreMemberIdOrderByTargetDateAscCreatedAtAsc(staffId).stream()
 			.map(StaffScheduleExceptionSummary::from)
 			.toList();
 	}
 
 	public List<BusinessHourSummary> listBusinessHours(UUID storeId) {
+		getStoreOrThrow(storeId);
 		return businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId).stream()
 			.map(BusinessHourSummary::from)
 			.toList();
 	}
 
 	public List<ScheduleExceptionSummary> listScheduleExceptions(UUID storeId) {
+		getStoreOrThrow(storeId);
 		return scheduleExceptionRepository.findAllByStoreIdOrderByTargetDateAscCreatedAtAsc(storeId).stream()
 			.map(ScheduleExceptionSummary::from)
 			.toList();
 	}
 
 	public StorePolicySummary getPolicy(UUID storeId) {
+		getStoreOrThrow(storeId);
 		StorePolicy policy = storePolicyRepository.findByStore_Id(storeId)
-			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+			.orElseThrow(() -> new BusinessException(ErrorCode.STORE_POLICY_NOT_FOUND));
 		return StorePolicySummary.from(policy);
 	}
 
-	private void ensureStaffInStore(UUID storeId, UUID staffId) {
-		StoreMember member = storeMemberRepository.findById(staffId)
-			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-		if (!storeId.equals(member.getStoreId())) {
-			throw new BusinessException(ErrorCode.NOT_FOUND);
-		}
+	private Store getStoreOrThrow(UUID storeId) {
+		return storeRepository.findById(storeId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
 	}
 
-	private long countAvailableStaff(UUID serviceId) {
-		return staffServiceRepository.findAllByServiceIdAndActiveTrueOrderByStoreMemberIdAsc(serviceId).stream().count();
+	private ServiceOffering getServiceOrThrow(UUID storeId, UUID serviceId) {
+		return serviceRepository.findByIdAndStoreId(serviceId, storeId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_NOT_FOUND));
+	}
+
+	private StoreMember getStoreMemberOrThrow(UUID storeId, UUID staffId) {
+		return storeMemberRepository.findByIdAndStoreId(staffId, storeId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.STAFF_NOT_FOUND));
+	}
+
+	private Map<UUID, StoreMember> getStoreMembersById(UUID storeId, Collection<UUID> staffIds) {
+		if (staffIds.isEmpty()) {
+			return Map.of();
+		}
+		return storeMemberRepository.findAllByStoreIdAndIdInOrderByCreatedAtAsc(storeId, staffIds).stream()
+			.collect(Collectors.toMap(StoreMember::getId, Function.identity()));
+	}
+
+	private StoreMember getStoreMemberOrThrow(Map<UUID, StoreMember> membersById, UUID staffId) {
+		StoreMember member = membersById.get(staffId);
+		if (member == null) {
+			throw new BusinessException(ErrorCode.STAFF_NOT_FOUND);
+		}
+		return member;
+	}
+
+	private Map<UUID, Long> countAvailableStaffByService(List<ServiceOffering> services) {
+		if (services.isEmpty()) {
+			return Map.of();
+		}
+		return staffServiceRepository.findAllByServiceIdInAndActiveTrue(
+			services.stream().map(ServiceOffering::getId).toList()).stream()
+			.collect(Collectors.groupingBy(StaffService::getServiceId, Collectors.counting()));
 	}
 
 	public record StoreSummary(UUID id, String name, String description, String phoneNumber, String address, String timezone,

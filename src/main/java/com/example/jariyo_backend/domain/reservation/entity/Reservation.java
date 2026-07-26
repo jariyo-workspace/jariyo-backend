@@ -117,6 +117,18 @@ public class Reservation {
 		return reservation;
 	}
 
+	public boolean belongsToCustomer(UUID customerId) {
+		return this.customerId.equals(customerId);
+	}
+
+	public boolean isCancelled() {
+		return status == ReservationStatus.CANCELLED;
+	}
+
+	public boolean canBeCancelled() {
+		return status == ReservationStatus.HELD || status == ReservationStatus.CONFIRMED;
+	}
+
 	public void cancelByCustomer(String reason, Instant cancelledAt, UUID customerId) {
 		this.status = ReservationStatus.CANCELLED;
 		this.cancellationReason = reason;

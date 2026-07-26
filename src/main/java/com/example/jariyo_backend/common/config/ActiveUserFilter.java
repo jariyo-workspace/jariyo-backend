@@ -2,17 +2,15 @@ package com.example.jariyo_backend.common.config;
 
 import java.io.IOException;
 import java.util.UUID;
-import com.example.jariyo_backend.common.api.ApiResponse;
+import com.example.jariyo_backend.common.api.ApiErrorResponseWriter;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.domain.user.entity.UserAccount;
 import com.example.jariyo_backend.domain.user.entity.UserStatus;
 import com.example.jariyo_backend.domain.user.repository.UserAccountRepository;
-import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -22,11 +20,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class ActiveUserFilter extends OncePerRequestFilter {
 	private final UserAccountRepository userAccountRepository;
-	private final ObjectMapper objectMapper;
+	private final ApiErrorResponseWriter errorResponseWriter;
 
-	public ActiveUserFilter(UserAccountRepository userAccountRepository, ObjectMapper objectMapper) {
+	public ActiveUserFilter(UserAccountRepository userAccountRepository, ApiErrorResponseWriter errorResponseWriter) {
 		this.userAccountRepository = userAccountRepository;
-		this.objectMapper = objectMapper;
+		this.errorResponseWriter = errorResponseWriter;
 	}
 
 	@Override
@@ -61,9 +59,6 @@ public class ActiveUserFilter extends OncePerRequestFilter {
 
 	private void write(HttpServletResponse response, ErrorCode errorCode) throws IOException {
 		SecurityContextHolder.clearContext();
-		response.setStatus(errorCode.getStatus().value());
-		response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-		objectMapper.writeValue(response.getOutputStream(),
-			ApiResponse.failure(errorCode.getCode(), errorCode.getMessage()));
+		errorResponseWriter.write(response, errorCode);
 	}
 }

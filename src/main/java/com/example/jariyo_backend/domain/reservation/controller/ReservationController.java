@@ -6,6 +6,7 @@ import com.example.jariyo_backend.common.idempotency.IdempotencyKey;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.CancelReservationCommand;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.CancelReservationResult;
+import com.example.jariyo_backend.domain.user.support.AuthenticatedUser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -37,7 +38,7 @@ public class ReservationController {
 	}
 
 	private UUID userId(Jwt jwt) {
-		return UUID.fromString(jwt.getSubject());
+		return AuthenticatedUser.from(jwt).id();
 	}
 
 	public record CancelReservationRequest(@NotBlank @Size(max = 100) String reasonCode,

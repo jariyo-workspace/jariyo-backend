@@ -1,12 +1,10 @@
 package com.example.jariyo_backend.common.config;
 
 import java.io.IOException;
-import com.example.jariyo_backend.common.api.ApiResponse;
+import com.example.jariyo_backend.common.api.ApiErrorResponseWriter;
 import com.example.jariyo_backend.common.error.ErrorCode;
-import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.http.MediaType;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.jwt.JwtValidationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -14,10 +12,10 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class AuthenticationEntryPointHandler implements AuthenticationEntryPoint {
-	private final ObjectMapper objectMapper;
+	private final ApiErrorResponseWriter errorResponseWriter;
 
-	public AuthenticationEntryPointHandler(ObjectMapper objectMapper) {
-		this.objectMapper = objectMapper;
+	public AuthenticationEntryPointHandler(ApiErrorResponseWriter errorResponseWriter) {
+		this.errorResponseWriter = errorResponseWriter;
 	}
 
 	@Override
@@ -45,9 +43,6 @@ public class AuthenticationEntryPointHandler implements AuthenticationEntryPoint
 	}
 
 	private void write(HttpServletResponse response, ErrorCode errorCode) throws IOException {
-		response.setStatus(errorCode.getStatus().value());
-		response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-		objectMapper.writeValue(response.getOutputStream(),
-			ApiResponse.failure(errorCode.getCode(), errorCode.getMessage()));
+		errorResponseWriter.write(response, errorCode);
 	}
 }

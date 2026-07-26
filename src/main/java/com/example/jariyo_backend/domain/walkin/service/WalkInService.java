@@ -7,6 +7,8 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
+import com.example.jariyo_backend.common.async.AsyncEventRecorder;
+import com.example.jariyo_backend.common.async.AsyncEventType;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.common.idempotency.PersistentIdempotencyService;
@@ -29,7 +31,6 @@ import com.example.jariyo_backend.domain.store.repository.StorePolicyRepository;
 import com.example.jariyo_backend.domain.store.repository.StoreRepository;
 import com.example.jariyo_backend.domain.user.entity.CustomerProfile;
 import com.example.jariyo_backend.domain.user.entity.StoreMember;
-import com.example.jariyo_backend.domain.user.entity.StoreMemberRole;
 import com.example.jariyo_backend.domain.user.entity.StoreMemberStatus;
 import com.example.jariyo_backend.domain.user.repository.CustomerProfileRepository;
 import com.example.jariyo_backend.domain.user.repository.StoreMemberRepository;
@@ -74,6 +75,7 @@ public class WalkInService {
 	private final QueueNumberIssuer queueNumberIssuer;
 	private final StoreAuthorizationService storeAuthorizationService;
 	private final PersistentIdempotencyService idempotencyService;
+	private final AsyncEventRecorder asyncEventRecorder;
 
 	public WalkInService(StoreRepository storeRepository, StorePolicyRepository storePolicyRepository,
 		ServiceRepository serviceRepository, StaffServiceRepository staffServiceRepository,
@@ -82,7 +84,8 @@ public class WalkInService {
 		WalkInEntryRepository walkInEntryRepository, CallHistoryRepository callHistoryRepository,
 		CheckInRepository checkInRepository, ServiceSessionRepository serviceSessionRepository,
 		WalkInStatusHistoryRepository historyRepository, QueueNumberIssuer queueNumberIssuer,
-		StoreAuthorizationService storeAuthorizationService, PersistentIdempotencyService idempotencyService) {
+		StoreAuthorizationService storeAuthorizationService, PersistentIdempotencyService idempotencyService,
+		AsyncEventRecorder asyncEventRecorder) {
 		this.storeRepository = storeRepository;
 		this.storePolicyRepository = storePolicyRepository;
 		this.serviceRepository = serviceRepository;
@@ -99,6 +102,7 @@ public class WalkInService {
 		this.queueNumberIssuer = queueNumberIssuer;
 		this.storeAuthorizationService = storeAuthorizationService;
 		this.idempotencyService = idempotencyService;
+		this.asyncEventRecorder = asyncEventRecorder;
 	}
 
 	@Transactional(readOnly = true)
@@ -180,8 +184,7 @@ public class WalkInService {
 	@Transactional(readOnly = true)
 	public WalkInDetail getMine(UUID userId, UUID walkInId) {
 		CustomerProfile customer = requireCustomer(userId);
-		WalkInEntry entry = requireEntry(walkInId);
-		if (!customer.getId().equals(entry.getCustomerId())) throw new BusinessException(ErrorCode.RESOURCE_NOT_OWNED_BY_USER);
+		WalkInEntry entry = requireOwnedEntry(customer.getId(), walkInId);
 		return detail(entry);
 	}
 
@@ -201,24 +204,22 @@ public class WalkInService {
 	@Transactional
 	public WalkInSummary cancelMine(UUID userId, UUID walkInId, String key, ReasonCommand command) {
 		return idempotencyService.execute(userId, "walk-in:cancel:" + walkInId, key, command, WalkInSummary.class,
-			() -> {
-				CustomerProfile customer = requireCustomer(userId);
-				WalkInEntry entry = requireEntryForUpdate(walkInId);
-				if (!customer.getId().equals(entry.getCustomerId())) throw new BusinessException(ErrorCode.RESOURCE_NOT_OWNED_BY_USER);
-				return transition(entry, WalkInStatus.CANCELLED, WalkInActorType.CUSTOMER, userId, command.reason());
-			});
+				() -> {
+					CustomerProfile customer = requireCustomer(userId);
+					WalkInEntry entry = requireOwnedEntryForUpdate(customer.getId(), walkInId);
+					return transition(entry, WalkInStatus.CANCELLED, WalkInActorType.CUSTOMER, userId, command.reason());
+				});
 	}
 
 	@Transactional
 	public WalkInSummary respondCall(UUID userId, UUID walkInId, String key, CallResponseCommand command) {
 		return idempotencyService.execute(userId, "walk-in:respond-call:" + walkInId, key, command,
-			WalkInSummary.class, () -> {
-				CustomerProfile customer = requireCustomer(userId);
-				WalkInEntry entry = requireEntryForUpdate(walkInId);
-				if (!customer.getId().equals(entry.getCustomerId())) throw new BusinessException(ErrorCode.RESOURCE_NOT_OWNED_BY_USER);
-				if (entry.getStatus() != WalkInStatus.CALLED) throw new BusinessException(ErrorCode.WALK_IN_INVALID_STATE);
-				if (entry.getCallExpiresAt().isBefore(Instant.now())) throw new BusinessException(ErrorCode.WALK_IN_CALL_EXPIRED);
-				return switch (command.response()) {
+				WalkInSummary.class, () -> {
+					CustomerProfile customer = requireCustomer(userId);
+					WalkInEntry entry = requireOwnedEntryForUpdate(customer.getId(), walkInId);
+					if (!entry.isCalled()) throw new BusinessException(ErrorCode.WALK_IN_INVALID_STATE);
+					if (entry.getCallExpiresAt().isBefore(Instant.now())) throw new BusinessException(ErrorCode.WALK_IN_CALL_EXPIRED);
+					return switch (command.response()) {
 					case ENTERING -> checkIn(entry, CheckInMethod.CUSTOMER_APP, null, WalkInActorType.CUSTOMER, userId);
 					case DELAYED -> respondAndTransition(entry, CallResponseStatus.MISSED, WalkInStatus.SKIPPED,
 						WalkInActorType.CUSTOMER, userId, "고객 지연 응답");
@@ -259,6 +260,9 @@ public class WalkInService {
 			if (previous != WalkInStatus.CALLED) {
 				history(entry, previous, WalkInStatus.CALLED, WalkInActorType.STORE_MEMBER, member.getId(), recall ? "재호출" : "고객 호출");
 			}
+			asyncEventRecorder.record(AsyncEventType.WALK_IN_CALLED, entry.getStoreId(), "WALK_IN_ENTRY", entry.getId(),
+				new WalkInCalledPayload(entry.getId(), entry.getStoreId(), entry.getStatus(), entry.getCalledAt(),
+					entry.getCallExpiresAt(), recall, member.getId()));
 			return summary(entry, waitingAhead(entry));
 		});
 	}
@@ -389,6 +393,9 @@ public class WalkInService {
 		}
 		entry.transitionTo(target, Instant.now());
 		history(entry, previous, target, actorType, actorId, reason);
+		asyncEventRecorder.record(AsyncEventType.WALK_IN_STATUS_CHANGED, entry.getStoreId(), "WALK_IN_ENTRY",
+			entry.getId(), new WalkInStatusChangedPayload(entry.getId(), entry.getStoreId(), previous, target,
+				actorType, actorId, reason));
 		return summary(entry, waitingAhead(entry));
 	}
 
@@ -449,34 +456,43 @@ public class WalkInService {
 	}
 
 	private Store requireStore(UUID storeId) {
-		return storeRepository.findById(storeId).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		return storeRepository.findById(storeId).orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
 	}
 
 	private StorePolicy requirePolicy(UUID storeId) {
-		return storePolicyRepository.findByStore_Id(storeId).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		return storePolicyRepository.findByStore_Id(storeId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.STORE_POLICY_NOT_FOUND));
 	}
 
 	private ServiceOffering requireActiveService(UUID storeId, UUID serviceId) {
-		ServiceOffering service = serviceRepository.findById(serviceId)
-			.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_NOT_ACTIVE));
-		if (!storeId.equals(service.getStoreId()) || service.getStatus() != ServiceStatus.ACTIVE) {
+		ServiceOffering service = requireService(storeId, serviceId);
+		if (service.getStatus() != ServiceStatus.ACTIVE) {
 			throw new BusinessException(ErrorCode.SERVICE_NOT_ACTIVE);
+		}
+		return service;
+	}
+
+	private ServiceOffering requireService(UUID storeId, UUID serviceId) {
+		ServiceOffering service = serviceRepository.findById(serviceId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_NOT_FOUND));
+		if (!storeId.equals(service.getStoreId())) {
+			throw new BusinessException(ErrorCode.SERVICE_NOT_FOUND);
 		}
 		return service;
 	}
 
 	private void requireAvailableStaff(UUID storeId, UUID serviceId, UUID staffId) {
 		StoreMember member = storeMemberRepository.findById(staffId)
-			.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_NOT_ACTIVE));
+			.orElseThrow(() -> new BusinessException(ErrorCode.STAFF_NOT_FOUND));
 		StaffService link = staffServiceRepository.findByStoreMemberIdAndServiceId(staffId, serviceId)
-			.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_NOT_ACTIVE));
+			.orElseThrow(() -> new BusinessException(ErrorCode.STAFF_NOT_AVAILABLE));
 		if (!storeId.equals(member.getStoreId()) || member.getStatus() != StoreMemberStatus.ACTIVE || !link.isActive()) {
-			throw new BusinessException(ErrorCode.SERVICE_NOT_ACTIVE);
+			throw new BusinessException(ErrorCode.STAFF_NOT_AVAILABLE);
 		}
 	}
 
 	private StoreMember requireStaff(UUID userId, UUID storeId) {
-		return storeAuthorizationService.requireRole(userId, storeId, StoreMemberRole.STAFF);
+		return storeAuthorizationService.requireStaff(userId, storeId);
 	}
 
 	private CustomerProfile requireCustomer(UUID userId) {
@@ -493,6 +509,22 @@ public class WalkInService {
 			.orElseThrow(() -> new BusinessException(ErrorCode.WALK_IN_NOT_FOUND));
 	}
 
+	private WalkInEntry requireOwnedEntry(UUID customerId, UUID walkInId) {
+		WalkInEntry entry = requireEntry(walkInId);
+		if (!entry.belongsToCustomer(customerId)) {
+			throw new BusinessException(ErrorCode.RESOURCE_NOT_OWNED_BY_USER);
+		}
+		return entry;
+	}
+
+	private WalkInEntry requireOwnedEntryForUpdate(UUID customerId, UUID walkInId) {
+		WalkInEntry entry = requireEntryForUpdate(walkInId);
+		if (!entry.belongsToCustomer(customerId)) {
+			throw new BusinessException(ErrorCode.RESOURCE_NOT_OWNED_BY_USER);
+		}
+		return entry;
+	}
+
 	private WalkInEntry requireStoreEntryForUpdate(UUID storeId, UUID id) {
 		WalkInEntry entry = requireEntryForUpdate(id);
 		if (!storeId.equals(entry.getStoreId())) throw new BusinessException(ErrorCode.WALK_IN_NOT_FOUND);
@@ -506,8 +538,7 @@ public class WalkInService {
 
 	private WalkInDetail detail(WalkInEntry entry) {
 		Store store = requireStore(entry.getStoreId());
-		ServiceOffering service = serviceRepository.findById(entry.getServiceId())
-			.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_NOT_ACTIVE));
+		ServiceOffering service = requireService(entry.getStoreId(), entry.getServiceId());
 		return new WalkInDetail(entry.getId(), new NamedResource(store.getId(), store.getName()),
 			new NamedResource(service.getId(), service.getName()), entry.getQueueNumber(), entry.getStatus(),
 			waitingAhead(entry), entry.getEstimatedWaitMinutes(), entry.getCalledAt(), entry.getCallExpiresAt(),
@@ -559,4 +590,10 @@ public class WalkInService {
 				session.getActualEndAt(), session.getActualDurationMinutes());
 		}
 	}
+
+	private record WalkInCalledPayload(UUID walkInId, UUID storeId, WalkInStatus status, Instant calledAt,
+		Instant callExpiresAt, boolean recall, UUID actorId) { }
+
+	private record WalkInStatusChangedPayload(UUID walkInId, UUID storeId, WalkInStatus previousStatus,
+		WalkInStatus currentStatus, WalkInActorType actorType, UUID actorId, String reason) { }
 }

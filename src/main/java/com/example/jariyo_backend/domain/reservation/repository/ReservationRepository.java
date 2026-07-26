@@ -47,4 +47,6 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 		@Param("statuses") Collection<ReservationStatus> statuses,
 		@Param("rangeStart") Instant rangeStart,
 		@Param("rangeEnd") Instant rangeEnd);
+
+	List<Reservation> findAllByStoreIdAndStartAtBetween(UUID storeId, Instant from, Instant to);
 }

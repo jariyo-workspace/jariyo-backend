@@ -9,6 +9,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import com.example.jariyo_backend.common.error.BusinessException;
+import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.domain.availability.dto.AvailabilityResponse;
 import com.example.jariyo_backend.domain.reservation.entity.Reservation;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationSource;
@@ -42,6 +44,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -173,6 +176,65 @@ class AvailabilityServiceTests {
 		AvailabilityResponse response = service.getAvailability(storeId, serviceId, staffId, date, date, 1);
 
 		assertTrue(response.dates().get(0).slots().isEmpty());
+	}
+
+	@Test
+	void rejectsNonPositivePartySizeBeforeLoadingStoreGraph() {
+		AvailabilityService service = new AvailabilityService(
+			storeRepository, storePolicyRepository, storeServiceDefinitionRepository, businessHourRepository,
+			scheduleExceptionRepository, storeMemberRepository, staffServiceRepository, staffScheduleRepository,
+			staffScheduleExceptionRepository, reservationRepository,
+			Clock.fixed(Instant.parse("2026-07-22T00:00:00Z"), ZoneOffset.UTC));
+
+		BusinessException exception = assertThrows(BusinessException.class,
+			() -> service.getAvailability(UUID.randomUUID(), UUID.randomUUID(), null,
+				LocalDate.of(2026, 7, 23), LocalDate.of(2026, 7, 23), 0));
+
+		assertEquals(ErrorCode.INVALID_PARTY_SIZE, exception.getErrorCode());
+	}
+
+	@Test
+	void excludesDatesOutsideBookingOpenDays() {
+		UUID storeId = UUID.randomUUID();
+		UUID serviceId = UUID.randomUUID();
+		UUID staffId = UUID.randomUUID();
+		LocalDate inRangeDate = LocalDate.of(2026, 8, 5);
+		LocalDate outOfRangeDate = LocalDate.of(2026, 8, 6);
+		AvailabilityService service = new AvailabilityService(
+			storeRepository, storePolicyRepository, storeServiceDefinitionRepository, businessHourRepository,
+			scheduleExceptionRepository, storeMemberRepository, staffServiceRepository, staffScheduleRepository,
+			staffScheduleExceptionRepository, reservationRepository,
+			Clock.fixed(Instant.parse("2026-07-22T00:00:00Z"), ZoneOffset.UTC));
+		StoreMember staff = new StoreMember(staffId, storeId, new UserAccount("staff@example.com", "+821012345678", "hash"),
+			StoreMemberRole.STAFF, "디자이너", true);
+
+		when(storeRepository.findByIdAndStatus(storeId, StoreStatus.ACTIVE)).thenReturn(Optional.of(
+			new Store(storeId, "자리요", null, "0212345678", "서울", "Asia/Seoul", StoreStatus.ACTIVE)));
+		when(storePolicyRepository.findByStoreId(storeId)).thenReturn(Optional.of(defaultPolicy(storeId)));
+		when(storeServiceDefinitionRepository.findByIdAndStoreIdAndStatus(serviceId, storeId, ServiceStatus.ACTIVE))
+			.thenReturn(Optional.of(new StoreServiceDefinition(serviceId, storeId, "커트", null, 30, 10, 1, ServiceStatus.ACTIVE)));
+		when(storeMemberRepository.findByIdAndStoreId(staffId, storeId)).thenReturn(Optional.of(staff));
+		when(staffServiceRepository.findAllByServiceIdAndActiveTrueAndStoreMemberIdIn(eq(serviceId), any()))
+			.thenReturn(List.of(new StaffService(UUID.randomUUID(), staffId, serviceId, null, true)));
+		when(staffScheduleRepository.findAllByStoreMemberIdIn(any())).thenReturn(List.of(
+			new StaffSchedule(UUID.randomUUID(), staffId, DayOfWeek.WEDNESDAY, LocalTime.of(9, 0), LocalTime.of(11, 0),
+				LocalDate.of(2026, 1, 1), null),
+			new StaffSchedule(UUID.randomUUID(), staffId, DayOfWeek.THURSDAY, LocalTime.of(9, 0), LocalTime.of(11, 0),
+				LocalDate.of(2026, 1, 1), null)));
+		when(staffScheduleExceptionRepository.findAllByStoreMemberIdInAndTargetDateBetween(any(), eq(inRangeDate), eq(outOfRangeDate)))
+			.thenReturn(List.of());
+		when(scheduleExceptionRepository.findAllByStoreIdAndTargetDateBetween(storeId, inRangeDate, outOfRangeDate))
+			.thenReturn(List.of());
+		when(businessHourRepository.findAllByStoreId(storeId)).thenReturn(List.of(
+			new BusinessHour(UUID.randomUUID(), storeId, DayOfWeek.WEDNESDAY, LocalTime.of(9, 0), LocalTime.of(11, 0), false),
+			new BusinessHour(UUID.randomUUID(), storeId, DayOfWeek.THURSDAY, LocalTime.of(9, 0), LocalTime.of(11, 0), false)));
+		when(reservationRepository.findActiveReservationsForAvailability(eq(storeId), any(), any(), any(), any()))
+			.thenReturn(List.of());
+
+		AvailabilityResponse response = service.getAvailability(storeId, serviceId, staffId, inRangeDate, outOfRangeDate, 1);
+
+		assertFalse(response.dates().get(0).slots().isEmpty());
+		assertTrue(response.dates().get(1).slots().isEmpty());
 	}
 
 	private void mockStoreGraph(UUID storeId, UUID serviceId, UUID staffId, StoreMember staff, LocalDate date) {

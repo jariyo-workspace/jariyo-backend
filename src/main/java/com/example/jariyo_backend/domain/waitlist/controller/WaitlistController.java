@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.UUID;
 import com.example.jariyo_backend.common.api.ApiResponse;
 import com.example.jariyo_backend.common.idempotency.IdempotencyKey;
+import com.example.jariyo_backend.domain.user.support.AuthenticatedUser;
 import com.example.jariyo_backend.domain.waitlist.entity.SlotOfferStatus;
 import com.example.jariyo_backend.domain.waitlist.entity.StaffPreferenceType;
 import com.example.jariyo_backend.domain.waitlist.entity.WaitlistStatus;
@@ -93,7 +94,7 @@ public class WaitlistController {
 	}
 
 	private UUID userId(Jwt jwt) {
-		return UUID.fromString(jwt.getSubject());
+		return AuthenticatedUser.from(jwt).id();
 	}
 
 	private <T> ResponseEntity<ApiResponse<T>> ok(T data) {
