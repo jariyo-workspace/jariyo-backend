@@ -12,6 +12,7 @@ import com.example.jariyo_backend.common.async.AsyncEventRecorder;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.common.idempotency.PersistentIdempotencyService;
+import com.example.jariyo_backend.domain.reservation.service.ReservationBookingService;
 import com.example.jariyo_backend.domain.store.entity.ServiceOffering;
 import com.example.jariyo_backend.domain.store.entity.Store;
 import com.example.jariyo_backend.domain.store.entity.StorePolicy;
@@ -53,7 +54,7 @@ class WaitlistServiceTests {
 	@Mock ServiceRepository serviceRepository;
 	@Mock StaffServiceRepository staffServiceRepository;
 	@Mock StoreMemberRepository storeMemberRepository;
-	@Mock com.example.jariyo_backend.domain.reservation.repository.ReservationRepository reservationRepository;
+	@Mock ReservationBookingService reservationBookingService;
 	@Mock PersistentIdempotencyService idempotencyService;
 	@Mock AsyncEventRecorder asyncEventRecorder;
 	@Mock EntityManager entityManager;
@@ -109,7 +110,7 @@ class WaitlistServiceTests {
 	private WaitlistService waitlistService() {
 		return new WaitlistService(waitlistEntryRepository, slotOfferRepository, slotOfferStatusHistoryRepository,
 			customerProfileRepository, storeRepository, storePolicyRepository, serviceRepository, staffServiceRepository,
-			storeMemberRepository, reservationRepository, idempotencyService, asyncEventRecorder, entityManager,
+			storeMemberRepository, reservationBookingService, idempotencyService, asyncEventRecorder, entityManager,
 			Clock.fixed(Instant.parse("2026-07-26T00:00:00Z"), ZoneOffset.UTC));
 	}
 

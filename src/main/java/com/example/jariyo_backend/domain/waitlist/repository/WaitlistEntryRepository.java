@@ -59,4 +59,6 @@ public interface WaitlistEntryRepository extends JpaRepository<WaitlistEntry, UU
 
 	@Query("select coalesce(max(w.sequenceNumber), 0) from WaitlistEntry w where w.storeId = :storeId")
 	int findMaxSequenceNumberByStoreId(@Param("storeId") UUID storeId);
+
+	List<WaitlistEntry> findAllByStoreIdAndDesiredDateOrderBySequenceNumberAscCreatedAtAsc(UUID storeId, LocalDate desiredDate);
 }
