@@ -16,6 +16,7 @@ import com.example.jariyo_backend.domain.reservation.service.ReservationService.
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationDetail;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationHistoryResult;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationSummary;
+import com.example.jariyo_backend.domain.user.support.AuthenticatedUser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -81,7 +82,7 @@ public class ReservationController {
 	}
 
 	private UUID userId(Jwt jwt) {
-		return UUID.fromString(jwt.getSubject());
+		return AuthenticatedUser.from(jwt).id();
 	}
 
 	public record CreateReservationRequest(@NotNull UUID storeId, @NotNull UUID serviceId, @NotNull UUID staffId,

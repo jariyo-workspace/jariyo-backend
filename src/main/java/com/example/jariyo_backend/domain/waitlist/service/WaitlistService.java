@@ -9,6 +9,8 @@ import java.time.ZonedDateTime;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
+import com.example.jariyo_backend.common.async.AsyncEventRecorder;
+import com.example.jariyo_backend.common.async.AsyncEventType;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.common.idempotency.PersistentIdempotencyService;
@@ -48,6 +50,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class WaitlistService {
 	private static final EnumSet<WaitlistStatus> ACTIVE_WAITLIST_STATUSES = EnumSet.of(
 		WaitlistStatus.WAITING, WaitlistStatus.OFFERED);
+
 	private final WaitlistEntryRepository waitlistEntryRepository;
 	private final SlotOfferRepository slotOfferRepository;
 	private final SlotOfferStatusHistoryRepository slotOfferStatusHistoryRepository;
@@ -59,6 +62,7 @@ public class WaitlistService {
 	private final StoreMemberRepository storeMemberRepository;
 	private final ReservationBookingService reservationBookingService;
 	private final PersistentIdempotencyService idempotencyService;
+	private final AsyncEventRecorder asyncEventRecorder;
 	private final EntityManager entityManager;
 	private final Clock clock;
 
@@ -68,7 +72,8 @@ public class WaitlistService {
 		StorePolicyRepository storePolicyRepository, ServiceRepository serviceRepository,
 		StaffServiceRepository staffServiceRepository,
 		StoreMemberRepository storeMemberRepository, ReservationBookingService reservationBookingService,
-		PersistentIdempotencyService idempotencyService, EntityManager entityManager, Clock clock) {
+		PersistentIdempotencyService idempotencyService, AsyncEventRecorder asyncEventRecorder,
+		EntityManager entityManager, Clock clock) {
 		this.waitlistEntryRepository = waitlistEntryRepository;
 		this.slotOfferRepository = slotOfferRepository;
 		this.slotOfferStatusHistoryRepository = slotOfferStatusHistoryRepository;
@@ -80,6 +85,7 @@ public class WaitlistService {
 		this.storeMemberRepository = storeMemberRepository;
 		this.reservationBookingService = reservationBookingService;
 		this.idempotencyService = idempotencyService;
+		this.asyncEventRecorder = asyncEventRecorder;
 		this.entityManager = entityManager;
 		this.clock = clock;
 	}
@@ -97,7 +103,9 @@ public class WaitlistService {
 			}
 			List<WaitlistEntry> duplicates = waitlistEntryRepository.findDuplicates(customer.getId(), command.storeId(),
 				command.serviceId(), command.desiredDate(), ACTIVE_WAITLIST_STATUSES);
-			if (!duplicates.isEmpty()) throw new BusinessException(ErrorCode.WAITLIST_DUPLICATED);
+			if (!duplicates.isEmpty()) {
+				throw new BusinessException(ErrorCode.WAITLIST_DUPLICATED);
+			}
 			int sequenceNumber = issueSequence(command.storeId());
 			Instant expiresAt = expiresAt(store, command.desiredDate(), command.acceptableEndTime());
 			WaitlistEntry entry = waitlistEntryRepository.save(new WaitlistEntry(command.storeId(), customer.getId(),
@@ -126,9 +134,7 @@ public class WaitlistService {
 		expirePendingOffers();
 		expireStaleWaitlists();
 		CustomerProfile customer = requireCustomer(userId);
-		WaitlistEntry entry = waitlistEntryRepository.findById(waitlistId)
-			.orElseThrow(() -> new BusinessException(ErrorCode.WAITLIST_NOT_FOUND));
-		if (!entry.getCustomerId().equals(customer.getId())) throw new BusinessException(ErrorCode.RESOURCE_NOT_OWNED_BY_USER);
+		WaitlistEntry entry = requireOwnedWaitlist(customer.getId(), waitlistId);
 		return detail(entry);
 	}
 
@@ -137,16 +143,12 @@ public class WaitlistService {
 		return idempotencyService.execute(userId, "waitlist:cancel:" + waitlistId, key, command,
 			WaitlistCancelResult.class, () -> {
 				CustomerProfile customer = requireCustomer(userId);
-				WaitlistEntry entry = waitlistEntryRepository.findByIdForUpdate(waitlistId)
-					.orElseThrow(() -> new BusinessException(ErrorCode.WAITLIST_NOT_FOUND));
-				if (!entry.getCustomerId().equals(customer.getId())) {
-					throw new BusinessException(ErrorCode.RESOURCE_NOT_OWNED_BY_USER);
-				}
-				if (entry.getStatus() != WaitlistStatus.WAITING && entry.getStatus() != WaitlistStatus.OFFERED) {
+				WaitlistEntry entry = requireOwnedWaitlistForUpdate(customer.getId(), waitlistId);
+				if (!entry.canBeCancelled()) {
 					throw new BusinessException(ErrorCode.WAITLIST_INVALID_STATE);
 				}
 				Instant now = clock.instant();
-				if (entry.getStatus() == WaitlistStatus.OFFERED) {
+				if (entry.isOffered()) {
 					for (SlotOffer offer : slotOfferRepository.findAllByWaitlistEntryIdAndStatus(entry.getId(), SlotOfferStatus.PENDING)) {
 						revokeOffer(offer, SlotOfferActorType.CUSTOMER, customer.getId(), "WAITLIST_CANCELLED");
 					}
@@ -173,9 +175,7 @@ public class WaitlistService {
 		CustomerProfile customer = requireCustomer(userId);
 		SlotOffer offer = slotOfferRepository.findById(offerId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.SLOT_OFFER_NOT_FOUND));
-		WaitlistEntry entry = waitlistEntryRepository.findById(offer.getWaitlistEntryId())
-			.orElseThrow(() -> new BusinessException(ErrorCode.WAITLIST_NOT_FOUND));
-		if (!entry.getCustomerId().equals(customer.getId())) throw new BusinessException(ErrorCode.RESOURCE_NOT_OWNED_BY_USER);
+		WaitlistEntry entry = requireOwnedWaitlist(customer.getId(), offer.getWaitlistEntryId());
 		return slotOfferDetail(offer, entry);
 	}
 
@@ -186,20 +186,24 @@ public class WaitlistService {
 				CustomerProfile customer = requireCustomer(userId);
 				SlotOffer offer = slotOfferRepository.findByIdForUpdate(offerId)
 					.orElseThrow(() -> new BusinessException(ErrorCode.SLOT_OFFER_NOT_FOUND));
-				WaitlistEntry entry = waitlistEntryRepository.findByIdForUpdate(offer.getWaitlistEntryId())
-					.orElseThrow(() -> new BusinessException(ErrorCode.WAITLIST_NOT_FOUND));
-				if (!entry.getCustomerId().equals(customer.getId())) throw new BusinessException(ErrorCode.RESOURCE_NOT_OWNED_BY_USER);
+				WaitlistEntry entry = requireOwnedWaitlistForUpdate(customer.getId(), offer.getWaitlistEntryId());
 				Instant now = clock.instant();
-				if (offer.getStatus() == SlotOfferStatus.ACCEPTED) throw new BusinessException(ErrorCode.SLOT_OFFER_ALREADY_ACCEPTED);
-				if (offer.getStatus() == SlotOfferStatus.DECLINED || offer.getStatus() == SlotOfferStatus.REVOKED) {
+				if (offer.isAlreadyAccepted()) {
+					throw new BusinessException(ErrorCode.SLOT_OFFER_ALREADY_ACCEPTED);
+				}
+				if (offer.isAlreadyDeclinedOrRevoked()) {
 					throw new BusinessException(ErrorCode.SLOT_OFFER_ALREADY_DECLINED);
 				}
-				if (offer.getStatus() != SlotOfferStatus.PENDING) throw new BusinessException(ErrorCode.SLOT_OFFER_EXPIRED);
+				if (!offer.isPending()) {
+					throw new BusinessException(ErrorCode.SLOT_OFFER_EXPIRED);
+				}
 				if (offer.isExpiredAt(now)) {
 					expireOffer(offer, entry, now, "SLOT_OFFER_EXPIRED");
 					throw new BusinessException(ErrorCode.SLOT_OFFER_EXPIRED);
 				}
-				if (entry.getStatus() != WaitlistStatus.OFFERED) throw new BusinessException(ErrorCode.WAITLIST_INVALID_STATE);
+				if (!entry.isOffered()) {
+					throw new BusinessException(ErrorCode.WAITLIST_INVALID_STATE);
+				}
 				Reservation reservation = reservationBookingService.bookFromWaitlist(customer.getUserId(),
 					offer.getStoreId(), offer.getServiceId(), offer.getStaffId(), offer.getStartAt(),
 					offer.getServiceEndAt(), offer.getOccupiedUntil(), entry.getPartySize());
@@ -207,6 +211,9 @@ public class WaitlistService {
 				entry.markReserved(now);
 				slotOfferStatusHistoryRepository.save(new SlotOfferStatusHistory(offer.getId(), SlotOfferStatus.PENDING,
 					SlotOfferStatus.ACCEPTED, SlotOfferActorType.CUSTOMER, customer.getId(), "ACCEPT_SLOT_OFFER", now));
+				asyncEventRecorder.record(AsyncEventType.SLOT_OFFER_ACCEPTED, offer.getStoreId(), "SLOT_OFFER",
+					offer.getId(), new SlotOfferAcceptedPayload(offer.getId(), offer.getWaitlistEntryId(),
+						reservation.getId(), offer.getStoreId(), customer.getId(), offer.getStartAt(), now));
 				return new AcceptSlotOfferResult(
 					new OfferAcceptance(offer.getId(), offer.getStatus(), offer.getAcceptedAt()),
 					new ResultingReservation(reservation.getId(), reservation.getSource(), reservation.getStatus(),
@@ -217,10 +224,14 @@ public class WaitlistService {
 
 	@Transactional
 	public void offerCancelledReservation(Reservation reservation, Instant now) {
-		if (reservation.getAssignedStaffId() == null) return;
+		if (reservation.getAssignedStaffId() == null) {
+			return;
+		}
 		StorePolicy policy = storePolicyRepository.findByStoreId(reservation.getStoreId())
 			.orElseThrow(() -> new BusinessException(ErrorCode.STORE_POLICY_NOT_FOUND));
-		if (!policy.isWaitlistEnabled()) return;
+		if (!policy.isWaitlistEnabled()) {
+			return;
+		}
 		Store store = requireStore(reservation.getStoreId());
 		LocalDate date = ZonedDateTime.ofInstant(reservation.getStartAt(), ZoneId.of(store.getTimezone())).toLocalDate();
 		LocalTime time = ZonedDateTime.ofInstant(reservation.getStartAt(), ZoneId.of(store.getTimezone())).toLocalTime();
@@ -234,11 +245,17 @@ public class WaitlistService {
 				candidate.markExpired();
 				continue;
 			}
-			if (candidate.getAcceptableStartTime().isAfter(time) || !candidate.getAcceptableEndTime().isAfter(time)) continue;
-			if (!candidate.matchesStaff(reservation.getAssignedStaffId())) continue;
+			if (candidate.getAcceptableStartTime().isAfter(time) || !candidate.getAcceptableEndTime().isAfter(time)) {
+				continue;
+			}
+			if (!candidate.matchesStaff(reservation.getAssignedStaffId())) {
+				continue;
+			}
 			WaitlistEntry locked = waitlistEntryRepository.findByIdForUpdate(candidate.getId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.WAITLIST_NOT_FOUND));
-			if (locked.getStatus() != WaitlistStatus.WAITING || locked.isExpiredAt(now)) continue;
+			if (locked.getStatus() != WaitlistStatus.WAITING || locked.isExpiredAt(now)) {
+				continue;
+			}
 			SlotOffer offer = slotOfferRepository.save(new SlotOffer(locked.getId(), locked.getStoreId(),
 				locked.getServiceId(), reservation.getAssignedStaffId(), reservation.getStartAt(),
 				reservation.getServiceEndAt(), reservation.getOccupiedUntil(), reservation.getId(),
@@ -246,6 +263,9 @@ public class WaitlistService {
 			locked.markOffered();
 			slotOfferStatusHistoryRepository.save(new SlotOfferStatusHistory(offer.getId(), null, SlotOfferStatus.PENDING,
 				SlotOfferActorType.SYSTEM, null, "SLOT_OFFER_CREATED", now));
+			asyncEventRecorder.record(AsyncEventType.SLOT_OFFER_CREATED, offer.getStoreId(), "SLOT_OFFER", offer.getId(),
+				new SlotOfferCreatedPayload(offer.getId(), locked.getId(), reservation.getId(), offer.getStoreId(),
+					offer.getServiceId(), offer.getStaffId(), offer.getStartAt(), offer.getExpiresAt()));
 			return;
 		}
 	}
@@ -256,9 +276,13 @@ public class WaitlistService {
 		Instant now = clock.instant();
 		for (SlotOffer candidate : slotOfferRepository.findAllExpiredPendingOffers(SlotOfferStatus.PENDING, now)) {
 			SlotOffer offer = slotOfferRepository.findByIdForUpdate(candidate.getId()).orElse(null);
-			if (offer == null || offer.getStatus() != SlotOfferStatus.PENDING || !offer.isExpiredAt(now)) continue;
+			if (offer == null || offer.getStatus() != SlotOfferStatus.PENDING || !offer.isExpiredAt(now)) {
+				continue;
+			}
 			WaitlistEntry entry = waitlistEntryRepository.findByIdForUpdate(offer.getWaitlistEntryId()).orElse(null);
-			if (entry == null) continue;
+			if (entry == null) {
+				continue;
+			}
 			expireOffer(offer, entry, now, "SLOT_OFFER_EXPIRED");
 		}
 	}
@@ -270,7 +294,9 @@ public class WaitlistService {
 		for (WaitlistEntry candidate : waitlistEntryRepository.findExpiredEntries(
 			List.of(WaitlistStatus.WAITING, WaitlistStatus.OFFERED), now)) {
 			WaitlistEntry entry = waitlistEntryRepository.findByIdForUpdate(candidate.getId()).orElse(null);
-			if (entry == null || !entry.isExpiredAt(now)) continue;
+			if (entry == null || !entry.isExpiredAt(now)) {
+				continue;
+			}
 			if (entry.getStatus() == WaitlistStatus.OFFERED) {
 				for (SlotOffer offer : slotOfferRepository.findAllByWaitlistEntryIdAndStatus(entry.getId(), SlotOfferStatus.PENDING)) {
 					expireOffer(offer, entry, now, "WAITLIST_EXPIRED");
@@ -296,7 +322,9 @@ public class WaitlistService {
 	}
 
 	private void revokeOffer(SlotOffer offer, SlotOfferActorType actorType, UUID actorId, String reasonCode) {
-		if (offer.getStatus() != SlotOfferStatus.PENDING) return;
+		if (offer.getStatus() != SlotOfferStatus.PENDING) {
+			return;
+		}
 		offer.revoke();
 		slotOfferStatusHistoryRepository.save(new SlotOfferStatusHistory(offer.getId(), SlotOfferStatus.PENDING,
 			SlotOfferStatus.REVOKED, actorType, actorId, reasonCode, clock.instant()));
@@ -331,7 +359,9 @@ public class WaitlistService {
 		}
 		Instant expiresAt = expiresAt(store, command.desiredDate(), command.acceptableEndTime());
 		Instant minimum = clock.instant().plusSeconds(policy.getMinimumBookingNoticeMinutes() * 60L);
-		if (!expiresAt.isAfter(minimum)) throw new BusinessException(ErrorCode.WAITLIST_DATE_OUT_OF_RANGE);
+		if (!expiresAt.isAfter(minimum)) {
+			throw new BusinessException(ErrorCode.WAITLIST_DATE_OUT_OF_RANGE);
+		}
 	}
 
 	private Instant expiresAt(Store store, LocalDate desiredDate, LocalTime acceptableEndTime) {
@@ -354,10 +384,19 @@ public class WaitlistService {
 	}
 
 	private ServiceOffering requireActiveService(UUID storeId, UUID serviceId) {
+		ServiceOffering service = requireService(storeId, serviceId);
+		if (service.getStatus() != ServiceStatus.ACTIVE) {
+			throw new BusinessException(ErrorCode.SERVICE_NOT_ACTIVE);
+		}
+		return service;
+	}
+
+	private ServiceOffering requireService(UUID storeId, UUID serviceId) {
 		ServiceOffering service = serviceRepository.findById(serviceId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_NOT_FOUND));
-		if (!service.getStoreId().equals(storeId)) throw new BusinessException(ErrorCode.SERVICE_NOT_FOUND);
-		if (service.getStatus() != ServiceStatus.ACTIVE) throw new BusinessException(ErrorCode.SERVICE_NOT_ACTIVE);
+		if (!service.getStoreId().equals(storeId)) {
+			throw new BusinessException(ErrorCode.SERVICE_NOT_FOUND);
+		}
 		return service;
 	}
 
@@ -370,8 +409,28 @@ public class WaitlistService {
 		boolean available = staffServiceRepository.findByStoreMemberIdAndServiceId(staffId, serviceId)
 			.filter(com.example.jariyo_backend.domain.store.entity.StaffService::isActive)
 			.isPresent();
-		if (!available) throw new BusinessException(ErrorCode.STAFF_NOT_AVAILABLE);
+		if (!available) {
+			throw new BusinessException(ErrorCode.STAFF_NOT_AVAILABLE);
+		}
 		return staff;
+	}
+
+	private WaitlistEntry requireOwnedWaitlist(UUID customerId, UUID waitlistId) {
+		WaitlistEntry entry = waitlistEntryRepository.findById(waitlistId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.WAITLIST_NOT_FOUND));
+		if (!entry.belongsToCustomer(customerId)) {
+			throw new BusinessException(ErrorCode.WAITLIST_NOT_OWNED_BY_USER);
+		}
+		return entry;
+	}
+
+	private WaitlistEntry requireOwnedWaitlistForUpdate(UUID customerId, UUID waitlistId) {
+		WaitlistEntry entry = waitlistEntryRepository.findByIdForUpdate(waitlistId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.WAITLIST_NOT_FOUND));
+		if (!entry.belongsToCustomer(customerId)) {
+			throw new BusinessException(ErrorCode.WAITLIST_NOT_OWNED_BY_USER);
+		}
+		return entry;
 	}
 
 	private WaitlistSummary summary(WaitlistEntry entry) {
@@ -382,7 +441,7 @@ public class WaitlistService {
 
 	private WaitlistDetail detail(WaitlistEntry entry) {
 		Store store = requireStore(entry.getStoreId());
-		ServiceOffering service = requireActiveService(entry.getStoreId(), entry.getServiceId());
+		ServiceOffering service = requireService(entry.getStoreId(), entry.getServiceId());
 		StoreMember staff = entry.getPreferredStaffId() == null ? null
 			: storeMemberRepository.findById(entry.getPreferredStaffId()).orElse(null);
 		SlotOffer offer = slotOfferRepository.findFirstByWaitlistEntryIdAndStatusOrderByCreatedAtDesc(entry.getId(),
@@ -404,7 +463,7 @@ public class WaitlistService {
 
 	private SlotOfferDetail slotOfferDetail(SlotOffer offer, WaitlistEntry entry) {
 		Store store = requireStore(offer.getStoreId());
-		ServiceOffering service = requireActiveService(offer.getStoreId(), offer.getServiceId());
+		ServiceOffering service = requireService(offer.getStoreId(), offer.getServiceId());
 		StoreMember staff = offer.getStaffId() == null ? null : storeMemberRepository.findById(offer.getStaffId()).orElse(null);
 		return new SlotOfferDetail(offer.getId(), entry.getId(), new NamedRef(store.getId(), store.getName()),
 			new NamedRef(service.getId(), service.getName()),
@@ -454,4 +513,10 @@ public class WaitlistService {
 
 	public record AcceptSlotOfferResult(OfferAcceptance offer, ResultingReservation reservation,
 		ResultingWaitlist waitlist) { }
+
+	private record SlotOfferCreatedPayload(UUID slotOfferId, UUID waitlistId, UUID reservationId, UUID storeId,
+		UUID serviceId, UUID staffId, Instant startAt, Instant expiresAt) { }
+
+	private record SlotOfferAcceptedPayload(UUID slotOfferId, UUID waitlistId, UUID reservationId, UUID storeId,
+		UUID customerId, Instant startAt, Instant acceptedAt) { }
 }

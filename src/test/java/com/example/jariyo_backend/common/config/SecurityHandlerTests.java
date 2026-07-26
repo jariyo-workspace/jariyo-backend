@@ -1,6 +1,7 @@
 package com.example.jariyo_backend.common.config;
 
 import java.util.List;
+import com.example.jariyo_backend.common.api.ApiErrorResponseWriter;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -17,7 +18,7 @@ class SecurityHandlerTests {
 	void returnsAuthenticationRequiredForRequestWithoutBearerToken() throws Exception {
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		MockHttpServletResponse response = new MockHttpServletResponse();
-		AuthenticationEntryPointHandler handler = new AuthenticationEntryPointHandler(JsonMapper.builder().build());
+		AuthenticationEntryPointHandler handler = new AuthenticationEntryPointHandler(errorResponseWriter());
 
 		handler.commence(request, response, new InsufficientAuthenticationException("required"));
 
@@ -28,7 +29,7 @@ class SecurityHandlerTests {
 	@Test
 	void returnsAccessDeniedForAuthenticatedRequestWithoutPermission() throws Exception {
 		MockHttpServletResponse response = new MockHttpServletResponse();
-		AccessDeniedHandler handler = new AccessDeniedHandler(JsonMapper.builder().build());
+		AccessDeniedHandler handler = new AccessDeniedHandler(errorResponseWriter());
 
 		handler.handle(new MockHttpServletRequest(), response, new AccessDeniedException("denied"));
 
@@ -41,7 +42,7 @@ class SecurityHandlerTests {
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.addHeader("Authorization", "Bearer expired");
 		MockHttpServletResponse response = new MockHttpServletResponse();
-		AuthenticationEntryPointHandler handler = new AuthenticationEntryPointHandler(JsonMapper.builder().build());
+		AuthenticationEntryPointHandler handler = new AuthenticationEntryPointHandler(errorResponseWriter());
 		JwtValidationException cause = new JwtValidationException("validation failed", List.of(
 			new OAuth2Error(JwtConfig.EXPIRED_TOKEN_ERROR_CODE, "message text can change", null)));
 
@@ -49,5 +50,9 @@ class SecurityHandlerTests {
 
 		assertEquals(401, response.getStatus());
 		assertTrue(response.getContentAsString().contains("ACCESS_TOKEN_EXPIRED"));
+	}
+
+	private ApiErrorResponseWriter errorResponseWriter() {
+		return new ApiErrorResponseWriter(JsonMapper.builder().build());
 	}
 }

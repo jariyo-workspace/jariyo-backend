@@ -1,6 +1,7 @@
 package com.example.jariyo_backend.domain.walkin.repository;
 
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,5 +20,7 @@ public interface WalkInEntryRepository extends JpaRepository<WalkInEntry, UUID> 
 	List<WalkInEntry> findAllByStoreIdAndOperationDateOrderByQueueNumberAsc(UUID storeId, LocalDate operationDate);
 
 	List<WalkInEntry> findAllByCustomerIdOrderByCreatedAtDesc(UUID customerId);
+
+	List<WalkInEntry> findAllByStoreIdAndCreatedAtBetween(UUID storeId, Instant from, Instant to);
 
 }

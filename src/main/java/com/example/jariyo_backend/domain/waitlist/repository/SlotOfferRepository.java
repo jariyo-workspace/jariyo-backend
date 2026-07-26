@@ -40,6 +40,8 @@ public interface SlotOfferRepository extends JpaRepository<SlotOffer, UUID> {
 	boolean existsByStoreIdAndServiceIdAndStaffIdAndStartAtAndStatus(
 		UUID storeId, UUID serviceId, UUID staffId, Instant startAt, SlotOfferStatus status);
 
+	List<SlotOffer> findAllByStoreIdAndCreatedAtBetween(UUID storeId, Instant from, Instant to);
+
 	@Query("""
 		select o from SlotOffer o
 		where o.storeId = :storeId

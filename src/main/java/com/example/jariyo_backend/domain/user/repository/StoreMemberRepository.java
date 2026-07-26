@@ -15,6 +15,10 @@ public interface StoreMemberRepository extends JpaRepository<StoreMember, UUID> 
 
 	Optional<StoreMember> findByIdAndStoreId(UUID id, UUID storeId);
 
+	List<StoreMember> findAllByStoreIdOrderByCreatedAtAsc(UUID storeId);
+
+	List<StoreMember> findAllByStoreIdAndIdInOrderByCreatedAtAsc(UUID storeId, Collection<UUID> ids);
+
 	List<StoreMember> findAllByStoreIdAndStatusAndBookingEnabledTrue(UUID storeId, StoreMemberStatus status);
 
 	List<StoreMember> findAllByStoreIdAndStatusAndBookingEnabledTrueAndIdIn(

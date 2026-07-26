@@ -4,6 +4,7 @@ import java.util.UUID;
 import com.example.jariyo_backend.common.api.ApiResponse;
 import com.example.jariyo_backend.domain.user.dto.MeResponse;
 import com.example.jariyo_backend.domain.user.service.MeService;
+import com.example.jariyo_backend.domain.user.support.AuthenticatedUser;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -22,6 +23,10 @@ public class MeController {
 
 	@GetMapping
 	public ResponseEntity<ApiResponse<MeResponse>> getMe(@AuthenticationPrincipal Jwt jwt) {
-		return ResponseEntity.ok(ApiResponse.success(meService.get(UUID.fromString(jwt.getSubject()))));
+		return ResponseEntity.ok(ApiResponse.success(meService.get(currentUser(jwt))));
+	}
+
+	private UUID currentUser(Jwt jwt) {
+		return AuthenticatedUser.from(jwt).id();
 	}
 }

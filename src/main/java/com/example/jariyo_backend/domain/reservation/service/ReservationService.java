@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.example.jariyo_backend.common.async.AsyncEventRecorder;
+import com.example.jariyo_backend.common.async.AsyncEventType;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.common.idempotency.PersistentIdempotencyService;
@@ -51,6 +53,7 @@ public class ReservationService {
 	private final StoreMemberRepository storeMemberRepository;
 	private final PersistentIdempotencyService idempotencyService;
 	private final WaitlistService waitlistService;
+	private final AsyncEventRecorder asyncEventRecorder;
 	private final Clock clock;
 
 	public ReservationService(ReservationRepository reservationRepository,
@@ -58,7 +61,7 @@ public class ReservationService {
 		CustomerProfileRepository customerProfileRepository, StoreRepository storeRepository,
 		StorePolicyRepository storePolicyRepository, StoreServiceDefinitionRepository serviceRepository,
 		StoreMemberRepository storeMemberRepository, PersistentIdempotencyService idempotencyService,
-		WaitlistService waitlistService, Clock clock) {
+		WaitlistService waitlistService, AsyncEventRecorder asyncEventRecorder, Clock clock) {
 		this.reservationRepository = reservationRepository;
 		this.historyRepository = historyRepository;
 		this.bookingService = bookingService;
@@ -69,6 +72,7 @@ public class ReservationService {
 		this.storeMemberRepository = storeMemberRepository;
 		this.idempotencyService = idempotencyService;
 		this.waitlistService = waitlistService;
+		this.asyncEventRecorder = asyncEventRecorder;
 		this.clock = clock;
 	}
 
@@ -101,8 +105,8 @@ public class ReservationService {
 
 	@Transactional(readOnly = true)
 	public ReservationDetail getMine(UUID userId, UUID reservationId) {
-		requireCustomer(userId);
-		Reservation reservation = requireOwnedReservation(userId, reservationId);
+		CustomerProfile customer = requireCustomer(userId);
+		Reservation reservation = requireOwnedReservation(customer.getId(), reservationId);
 		Store store = requireStore(reservation.getStoreId());
 		StorePolicy policy = requirePolicy(store.getId());
 		return detail(reservation, store, requireService(reservation.getServiceId()),
@@ -111,8 +115,8 @@ public class ReservationService {
 
 	@Transactional(readOnly = true)
 	public List<ReservationHistoryResult> historyMine(UUID userId, UUID reservationId) {
-		requireCustomer(userId);
-		Reservation reservation = requireOwnedReservation(userId, reservationId);
+		CustomerProfile customer = requireCustomer(userId);
+		Reservation reservation = requireOwnedReservation(customer.getId(), reservationId);
 		Store store = requireStore(reservation.getStoreId());
 		ZoneId zoneId = ZoneId.of(store.getTimezone());
 		return historyRepository.findAllByReservationIdOrderByOccurredAtAscIdAsc(reservationId).stream()
@@ -126,10 +130,10 @@ public class ReservationService {
 	public CancelReservationResult cancelMine(UUID userId, UUID reservationId, String key, CancelReservationCommand command) {
 		return idempotencyService.execute(userId, "reservation:cancel:" + reservationId, key, command,
 			CancelReservationResult.class, () -> {
-				requireCustomer(userId);
+				CustomerProfile customer = requireCustomer(userId);
 				Reservation reservation = reservationRepository.findByIdForUpdate(reservationId)
 					.orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND));
-				ensureOwned(userId, reservation);
+				ensureOwned(customer.getId(), reservation);
 				if (reservation.getStatus() == ReservationStatus.CANCELLED) {
 					throw new BusinessException(ErrorCode.RESERVATION_ALREADY_CANCELLED);
 				}
@@ -143,11 +147,15 @@ public class ReservationService {
 				if (!canCancel(reservation, policy, now)) {
 					throw new BusinessException(ErrorCode.RESERVATION_CANCELLATION_DEADLINE_PASSED);
 				}
-				reservation.cancelByCustomer(command.reason(), now, userId);
+				reservation.cancelByCustomer(command.reason(), now, customer.getUserId());
 				historyRepository.save(new ReservationStatusHistory(reservation.getId(), previousStatus,
 					ReservationStatus.CANCELLED, ReservationActorType.CUSTOMER, userId, "CUSTOMER_CANCELLED",
 					command.reason(), now));
 				waitlistService.offerCancelledReservation(reservation, now);
+				asyncEventRecorder.record(AsyncEventType.RESERVATION_CANCELLED, reservation.getStoreId(), "RESERVATION",
+					reservation.getId(), new ReservationCancelledPayload(reservation.getId(), reservation.getStoreId(),
+						customer.getId(), reservation.getStatus(), reservation.getCancelledAt(),
+						reservation.getCancelledByType()));
 				return new CancelReservationResult(reservation.getId(), reservation.getStatus(),
 					atStore(reservation.getCancelledAt(), ZoneId.of(store.getTimezone())), reservation.getCancelledByType());
 			});
@@ -203,15 +211,15 @@ public class ReservationService {
 		return (from == null || !date.isBefore(from)) && (to == null || !date.isAfter(to));
 	}
 
-	private Reservation requireOwnedReservation(UUID userId, UUID reservationId) {
+	private Reservation requireOwnedReservation(UUID customerId, UUID reservationId) {
 		Reservation reservation = reservationRepository.findById(reservationId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND));
-		ensureOwned(userId, reservation);
+		ensureOwned(customerId, reservation);
 		return reservation;
 	}
 
-	private void ensureOwned(UUID userId, Reservation reservation) {
-		if (!userId.equals(reservation.getCustomerId())) {
+	private void ensureOwned(UUID customerId, Reservation reservation) {
+		if (!reservation.belongsToCustomer(customerId)) {
 			throw new BusinessException(ErrorCode.RESERVATION_NOT_OWNED_BY_USER);
 		}
 	}
@@ -296,4 +304,7 @@ public class ReservationService {
 
 	public record CancelReservationResult(UUID id, ReservationStatus status, OffsetDateTime cancelledAt,
 		String cancelledByType) { }
+
+	private record ReservationCancelledPayload(UUID reservationId, UUID storeId, UUID customerId,
+		ReservationStatus status, Instant cancelledAt, String cancelledByType) { }
 }

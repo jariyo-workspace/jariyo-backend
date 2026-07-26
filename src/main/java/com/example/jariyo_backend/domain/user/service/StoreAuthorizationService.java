@@ -22,9 +22,35 @@ public class StoreAuthorizationService {
 	@Transactional(readOnly = true)
 	@PreAuthorize("#userId.toString() == authentication.name")
 	public StoreMember requireRole(UUID userId, UUID storeId, StoreMemberRole requiredRole) {
+		StoreMember member = requireActiveMembership(userId, storeId);
+		if (!member.getRole().includes(requiredRole)) {
+			throw new BusinessException(ErrorCode.STORE_ACCESS_DENIED);
+		}
+		return member;
+	}
+
+	@Transactional(readOnly = true)
+	@PreAuthorize("#userId.toString() == authentication.name")
+	public StoreMember requireStaff(UUID userId, UUID storeId) {
+		return requireRole(userId, storeId, StoreMemberRole.STAFF);
+	}
+
+	@Transactional(readOnly = true)
+	@PreAuthorize("#userId.toString() == authentication.name")
+	public StoreMember requireManager(UUID userId, UUID storeId) {
+		return requireRole(userId, storeId, StoreMemberRole.MANAGER);
+	}
+
+	@Transactional(readOnly = true)
+	@PreAuthorize("#userId.toString() == authentication.name")
+	public StoreMember requireOwner(UUID userId, UUID storeId) {
+		return requireRole(userId, storeId, StoreMemberRole.OWNER);
+	}
+
+	private StoreMember requireActiveMembership(UUID userId, UUID storeId) {
 		StoreMember member = storeMemberRepository.findByUser_IdAndStoreId(userId, storeId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.STORE_ACCESS_DENIED));
-		if (member.getStatus() != StoreMemberStatus.ACTIVE || !member.getRole().includes(requiredRole)) {
+		if (member.getStatus() != StoreMemberStatus.ACTIVE) {
 			throw new BusinessException(ErrorCode.STORE_ACCESS_DENIED);
 		}
 		return member;

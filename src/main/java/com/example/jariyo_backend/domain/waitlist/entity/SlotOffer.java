@@ -93,6 +93,18 @@ public class SlotOffer {
 		this.acceptedAt = acceptedAt;
 	}
 
+	public boolean isPending() {
+		return status == SlotOfferStatus.PENDING;
+	}
+
+	public boolean isAlreadyAccepted() {
+		return status == SlotOfferStatus.ACCEPTED;
+	}
+
+	public boolean isAlreadyDeclinedOrRevoked() {
+		return status == SlotOfferStatus.DECLINED || status == SlotOfferStatus.REVOKED;
+	}
+
 	public void decline(Instant declinedAt) {
 		this.status = SlotOfferStatus.DECLINED;
 		this.declinedAt = declinedAt;

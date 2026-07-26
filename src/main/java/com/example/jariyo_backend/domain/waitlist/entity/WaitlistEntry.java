@@ -104,6 +104,22 @@ public class WaitlistEntry {
 		this.status = WaitlistStatus.OFFERED;
 	}
 
+	public boolean belongsToCustomer(UUID customerId) {
+		return this.customerId.equals(customerId);
+	}
+
+	public boolean canBeCancelled() {
+		return status == WaitlistStatus.WAITING || status == WaitlistStatus.OFFERED;
+	}
+
+	public boolean isOffered() {
+		return status == WaitlistStatus.OFFERED;
+	}
+
+	public boolean isWaiting() {
+		return status == WaitlistStatus.WAITING;
+	}
+
 	public void markReserved(Instant reservedAt) {
 		this.status = WaitlistStatus.RESERVED;
 		this.reservedAt = reservedAt;
