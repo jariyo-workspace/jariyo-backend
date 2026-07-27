@@ -44,6 +44,30 @@ public class AdminOperationsController {
 		return ok(analyticsService.getSummary(userId(jwt), storeId, from, to));
 	}
 
+	@GetMapping("/analytics/reservations/daily")
+	public ResponseEntity<ApiResponse<List<AdminAnalyticsService.DailyReservationAnalytics>>> getDailyReservationAnalytics(
+		@AuthenticationPrincipal Jwt jwt, @PathVariable UUID storeId,
+		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+		return ok(analyticsService.getDailyReservationAnalytics(userId(jwt), storeId, from, to));
+	}
+
+	@GetMapping("/analytics/staff")
+	public ResponseEntity<ApiResponse<List<AdminAnalyticsService.StaffAnalytics>>> getStaffAnalytics(
+		@AuthenticationPrincipal Jwt jwt, @PathVariable UUID storeId,
+		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+		return ok(analyticsService.getStaffAnalytics(userId(jwt), storeId, from, to));
+	}
+
+	@GetMapping("/analytics/services/duration")
+	public ResponseEntity<ApiResponse<List<AdminAnalyticsService.ServiceDurationAnalytics>>> getServiceDurationAnalytics(
+		@AuthenticationPrincipal Jwt jwt, @PathVariable UUID storeId,
+		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+		return ok(analyticsService.getServiceDurationAnalytics(userId(jwt), storeId, from, to));
+	}
+
 	@GetMapping("/failed-jobs")
 	public ResponseEntity<ApiResponse<List<FailedJobAdminService.FailedJobSummary>>> listFailedJobs(
 		@AuthenticationPrincipal Jwt jwt, @PathVariable UUID storeId,
