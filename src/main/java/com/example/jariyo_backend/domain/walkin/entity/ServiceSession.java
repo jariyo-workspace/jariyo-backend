@@ -53,7 +53,10 @@ public class ServiceSession {
 
 	public UUID getId() { return id; }
 	public UUID getStoreId() { return storeId; }
+	public UUID getCustomerId() { return customerId; }
 	public UUID getWalkInEntryId() { return walkInEntryId; }
+	public UUID getServiceId() { return serviceId; }
+	public UUID getStaffId() { return staffId; }
 	public ServiceSessionStatus getStatus() { return status; }
 	public Instant getActualStartAt() { return actualStartAt; }
 	public Instant getActualEndAt() { return actualEndAt; }

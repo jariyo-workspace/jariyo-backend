@@ -1,5 +1,7 @@
 package com.example.jariyo_backend.domain.walkin.repository;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import com.example.jariyo_backend.domain.walkin.entity.ServiceSession;
@@ -12,6 +14,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface ServiceSessionRepository extends JpaRepository<ServiceSession, UUID> {
 	Optional<ServiceSession> findByWalkInEntryIdAndStatus(UUID walkInEntryId, ServiceSessionStatus status);
+
+	List<ServiceSession> findAllByStoreIdAndActualStartAtBetween(UUID storeId, Instant from, Instant to);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select s from ServiceSession s where s.id = :id")
