@@ -78,20 +78,66 @@ public class ReservationService {
 
 	@Transactional
 	public ReservationCreateResult create(UUID userId, String key, CreateReservationCommand command) {
-		requireCustomer(userId);
+		CustomerProfile customer = requireCustomer(userId);
 		return idempotencyService.execute(userId, "reservation:create", key, command,
-			ReservationCreateResult.class, () -> createResult(bookingService.bookCustomer(userId,
+			ReservationCreateResult.class, () -> createResult(bookingService.bookCustomer(customer.getId(),
 				new CustomerBookingCommand(command.storeId(), command.serviceId(), command.staffId(), command.startAt(),
 					command.partySize(), command.customerNote()))));
 	}
 
+	@Transactional
+	public ReservationHoldResult createHold(UUID userId, String key, CreateHoldCommand command) {
+		CustomerProfile customer = requireCustomer(userId);
+		return idempotencyService.execute(userId, "reservation:hold", key, command,
+			ReservationHoldResult.class, () -> {
+				Reservation reservation = bookingService.holdCustomer(customer.getId(),
+					new CustomerBookingCommand(command.storeId(), command.serviceId(), command.staffId(),
+						command.startAt(), command.partySize(), null));
+				asyncEventRecorder.record(AsyncEventType.RESERVATION_HOLD_CREATED, reservation.getStoreId(),
+					"RESERVATION", reservation.getId(), new ReservationHoldCreatedPayload(reservation.getId(),
+						reservation.getStoreId(), reservation.getCustomerId(), reservation.getHoldExpiresAt()));
+				Store store = requireStore(reservation.getStoreId());
+				return new ReservationHoldResult(reservation.getId(), reservation.getStatus(),
+					atStore(reservation.getHoldExpiresAt(), ZoneId.of(store.getTimezone())));
+			});
+	}
+
+	@Transactional
+	public ConfirmReservationResult confirm(UUID userId, UUID reservationId, String key) {
+		return idempotencyService.execute(userId, "reservation:confirm:" + reservationId, key, reservationId,
+			ConfirmReservationResult.class, () -> {
+				CustomerProfile customer = requireCustomer(userId);
+				Reservation reservation = reservationRepository.findByIdForUpdate(reservationId)
+					.orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND));
+				ensureOwned(customer.getId(), reservation);
+				Instant now = clock.instant();
+				if (reservation.getStatus() == ReservationStatus.EXPIRED || reservation.isHoldExpiredAt(now)) {
+					throw new BusinessException(ErrorCode.RESERVATION_HOLD_EXPIRED);
+				}
+				if (reservation.getStatus() != ReservationStatus.HELD) {
+					throw new BusinessException(ErrorCode.RESERVATION_INVALID_STATE);
+				}
+				reservation.confirm(now);
+				historyRepository.save(new ReservationStatusHistory(reservation.getId(), ReservationStatus.HELD,
+					ReservationStatus.CONFIRMED, ReservationActorType.CUSTOMER, customer.getId(),
+					"HOLD_CONFIRMED", null, now));
+				asyncEventRecorder.record(AsyncEventType.RESERVATION_CONFIRMED, reservation.getStoreId(),
+					"RESERVATION", reservation.getId(), new ReservationConfirmedPayload(reservation.getId(),
+						reservation.getStoreId(), reservation.getCustomerId(), now));
+				Store store = requireStore(reservation.getStoreId());
+				return new ConfirmReservationResult(reservation.getId(), reservation.getStatus(),
+					atStore(now, ZoneId.of(store.getTimezone())));
+			});
+	}
+
 	@Transactional(readOnly = true)
 	public List<ReservationSummary> listMine(UUID userId, ReservationStatus status, LocalDate from, LocalDate to) {
-		requireCustomer(userId);
+		CustomerProfile customer = requireCustomer(userId);
 		if (from != null && to != null && from.isAfter(to)) {
 			throw new BusinessException(ErrorCode.BAD_REQUEST);
 		}
-		List<Reservation> reservations = reservationRepository.findAllByCustomerIdOrderByStartAtDescIdDesc(userId);
+		List<Reservation> reservations =
+			reservationRepository.findAllByCustomerIdOrderByStartAtDescIdDesc(customer.getId());
 		Map<UUID, Store> stores = stores(reservations);
 		Map<UUID, StoreServiceDefinition> services = services(reservations);
 		Map<UUID, StoreMember> staff = staff(reservations);
@@ -141,9 +187,12 @@ public class ReservationService {
 				if (!CANCELLABLE_STATUSES.contains(previousStatus)) {
 					throw new BusinessException(ErrorCode.RESERVATION_INVALID_STATE);
 				}
+				Instant now = clock.instant();
+				if (reservation.isHoldExpiredAt(now)) {
+					throw new BusinessException(ErrorCode.RESERVATION_HOLD_EXPIRED);
+				}
 				Store store = requireStore(reservation.getStoreId());
 				StorePolicy policy = requirePolicy(store.getId());
-				Instant now = clock.instant();
 				if (!canCancel(reservation, policy, now)) {
 					throw new BusinessException(ErrorCode.RESERVATION_CANCELLATION_DEADLINE_PASSED);
 				}
@@ -198,6 +247,7 @@ public class ReservationService {
 
 	private boolean canCancel(Reservation reservation, StorePolicy policy, Instant now) {
 		return CANCELLABLE_STATUSES.contains(reservation.getStatus())
+			&& !reservation.isHoldExpiredAt(now)
 			&& (reservation.getStatus() == ReservationStatus.HELD
 				|| !now.isAfter(cancellationDeadline(reservation, policy)));
 	}
@@ -280,6 +330,9 @@ public class ReservationService {
 	public record CreateReservationCommand(UUID storeId, UUID serviceId, UUID staffId, OffsetDateTime startAt,
 		int partySize, String customerNote) { }
 
+	public record CreateHoldCommand(UUID storeId, UUID serviceId, UUID staffId, OffsetDateTime startAt,
+		int partySize) { }
+
 	public record CancelReservationCommand(String reason) { }
 
 	public record NamedRef(UUID id, String name) { }
@@ -289,6 +342,10 @@ public class ReservationService {
 	public record ReservationCreateResult(UUID id, NamedRef store, NamedRef service, NamedRef staff,
 		ReservationSource source, ReservationStatus status, OffsetDateTime startAt, OffsetDateTime serviceEndAt,
 		OffsetDateTime occupiedUntil, OffsetDateTime createdAt) { }
+
+	public record ReservationHoldResult(UUID reservationId, ReservationStatus status, OffsetDateTime holdExpiresAt) { }
+
+	public record ConfirmReservationResult(UUID id, ReservationStatus status, OffsetDateTime confirmedAt) { }
 
 	public record ReservationSummary(UUID id, NamedRef store, NamedRef service, NamedRef staff,
 		ReservationStatus status, OffsetDateTime startAt, OffsetDateTime serviceEndAt) { }
@@ -307,4 +364,10 @@ public class ReservationService {
 
 	private record ReservationCancelledPayload(UUID reservationId, UUID storeId, UUID customerId,
 		ReservationStatus status, Instant cancelledAt, String cancelledByType) { }
+
+	private record ReservationHoldCreatedPayload(UUID reservationId, UUID storeId, UUID customerId,
+		Instant holdExpiresAt) { }
+
+	private record ReservationConfirmedPayload(UUID reservationId, UUID storeId, UUID customerId,
+		Instant confirmedAt) { }
 }

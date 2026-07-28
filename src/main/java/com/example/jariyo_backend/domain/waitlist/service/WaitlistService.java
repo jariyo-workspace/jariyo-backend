@@ -204,7 +204,7 @@ public class WaitlistService {
 				if (!entry.isOffered()) {
 					throw new BusinessException(ErrorCode.WAITLIST_INVALID_STATE);
 				}
-				Reservation reservation = reservationBookingService.bookFromWaitlist(customer.getUserId(),
+				Reservation reservation = reservationBookingService.bookFromWaitlist(customer.getId(),
 					offer.getStoreId(), offer.getServiceId(), offer.getStaffId(), offer.getStartAt(),
 					offer.getServiceEndAt(), offer.getOccupiedUntil(), entry.getPartySize());
 				offer.accept(reservation.getId(), now);

@@ -1,6 +1,9 @@
 package com.example.jariyo_backend.common.async;
 
 public enum AsyncEventType {
+	RESERVATION_HOLD_CREATED,
+	RESERVATION_CONFIRMED,
+	RESERVATION_HOLD_EXPIRED,
 	RESERVATION_CANCELLED,
 	SLOT_OFFER_CREATED,
 	SLOT_OFFER_ACCEPTED,

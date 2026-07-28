@@ -72,6 +72,27 @@ public class ReservationBookingService {
 
 	@Transactional(propagation = Propagation.MANDATORY)
 	public Reservation bookCustomer(UUID customerId, CustomerBookingCommand command) {
+		PreparedCustomerBooking prepared = prepareCustomerBooking(command);
+		AvailabilitySlotResponse slot = prepared.slot();
+		return createConfirmed(new ConfirmedBooking(command.storeId(), customerId, command.serviceId(),
+			command.staffId(), ReservationSource.CUSTOMER_BOOKING, slot.startAt().toInstant(),
+			slot.serviceEndAt().toInstant(), slot.occupiedUntil().toInstant(), command.partySize(),
+			command.customerNote(), ErrorCode.RESERVATION_SLOT_ALREADY_TAKEN,
+			ErrorCode.CUSTOMER_HAS_OVERLAPPING_RESERVATION));
+	}
+
+	@Transactional(propagation = Propagation.MANDATORY)
+	public Reservation holdCustomer(UUID customerId, CustomerBookingCommand command) {
+		PreparedCustomerBooking prepared = prepareCustomerBooking(command);
+		AvailabilitySlotResponse slot = prepared.slot();
+		return createHeld(new ConfirmedBooking(command.storeId(), customerId, command.serviceId(),
+			command.staffId(), ReservationSource.CUSTOMER_BOOKING, slot.startAt().toInstant(),
+			slot.serviceEndAt().toInstant(), slot.occupiedUntil().toInstant(), command.partySize(),
+			command.customerNote(), ErrorCode.RESERVATION_SLOT_ALREADY_TAKEN,
+			ErrorCode.CUSTOMER_HAS_OVERLAPPING_RESERVATION), prepared.policy().getReservationHoldMinutes());
+	}
+
+	private PreparedCustomerBooking prepareCustomerBooking(CustomerBookingCommand command) {
 		Store store = requireActiveStore(command.storeId());
 		StorePolicy policy = requirePolicy(command.storeId());
 		StoreServiceDefinition service = requireActiveService(command.storeId(), command.serviceId());
@@ -89,12 +110,7 @@ public class ReservationBookingService {
 			.filter(value -> value.startAt().toInstant().equals(command.startAt().toInstant()))
 			.findFirst()
 			.orElseGet(() -> unavailableSlot(command, service));
-
-		return createConfirmed(new ConfirmedBooking(command.storeId(), customerId, command.serviceId(),
-			command.staffId(), ReservationSource.CUSTOMER_BOOKING, slot.startAt().toInstant(),
-			slot.serviceEndAt().toInstant(), slot.occupiedUntil().toInstant(), command.partySize(),
-			command.customerNote(), ErrorCode.RESERVATION_SLOT_ALREADY_TAKEN,
-			ErrorCode.CUSTOMER_HAS_OVERLAPPING_RESERVATION));
+		return new PreparedCustomerBooking(policy, slot);
 	}
 
 	@Transactional(propagation = Propagation.MANDATORY)
@@ -106,17 +122,8 @@ public class ReservationBookingService {
 	}
 
 	private Reservation createConfirmed(ConfirmedBooking booking) {
-		lock("reservation:staff:" + booking.staffId());
-		lock("reservation:customer:" + booking.customerId());
-		if (reservationRepository.existsOverlappingReservation(booking.storeId(), booking.staffId(), ACTIVE_STATUSES,
-			booking.startAt(), booking.occupiedUntil())) {
-			throw new BusinessException(booking.staffConflictCode());
-		}
-		if (reservationRepository.existsOverlappingCustomerReservation(booking.customerId(), ACTIVE_STATUSES,
-			booking.startAt(), booking.occupiedUntil())) {
-			throw new BusinessException(booking.customerConflictCode());
-		}
 		Instant now = clock.instant();
+		lockAndCheckConflicts(booking, now);
 		Reservation reservation = reservationRepository.saveAndFlush(Reservation.confirmed(
 			booking.storeId(), booking.customerId(), booking.serviceId(), booking.staffId(), booking.source(),
 			booking.startAt(), booking.serviceEndAt(), booking.occupiedUntil(), booking.partySize(),
@@ -124,6 +131,31 @@ public class ReservationBookingService {
 		historyRepository.save(new ReservationStatusHistory(reservation.getId(), null, ReservationStatus.CONFIRMED,
 			ReservationActorType.CUSTOMER, booking.customerId(), "CREATED", null, now));
 		return reservation;
+	}
+
+	private Reservation createHeld(ConfirmedBooking booking, int holdMinutes) {
+		Instant now = clock.instant();
+		lockAndCheckConflicts(booking, now);
+		Reservation reservation = reservationRepository.saveAndFlush(Reservation.held(
+			booking.storeId(), booking.customerId(), booking.serviceId(), booking.staffId(), booking.source(),
+			booking.startAt(), booking.serviceEndAt(), booking.occupiedUntil(), booking.partySize(),
+			booking.customerNote(), now.plusSeconds(holdMinutes * 60L)));
+		historyRepository.save(new ReservationStatusHistory(reservation.getId(), null, ReservationStatus.HELD,
+			ReservationActorType.CUSTOMER, booking.customerId(), "HOLD_CREATED", null, now));
+		return reservation;
+	}
+
+	private void lockAndCheckConflicts(ConfirmedBooking booking, Instant now) {
+		lock("reservation:staff:" + booking.staffId());
+		lock("reservation:customer:" + booking.customerId());
+		if (reservationRepository.existsOverlappingReservation(booking.storeId(), booking.staffId(), ACTIVE_STATUSES,
+			ReservationStatus.HELD, now, booking.startAt(), booking.occupiedUntil())) {
+			throw new BusinessException(booking.staffConflictCode());
+		}
+		if (reservationRepository.existsOverlappingCustomerReservation(booking.customerId(), ACTIVE_STATUSES,
+			ReservationStatus.HELD, now, booking.startAt(), booking.occupiedUntil())) {
+			throw new BusinessException(booking.customerConflictCode());
+		}
 	}
 
 	private AvailabilitySlotResponse unavailableSlot(CustomerBookingCommand command, StoreServiceDefinition service) {
@@ -136,7 +168,7 @@ public class ReservationBookingService {
 		Instant startAt = command.startAt().toInstant();
 		Instant occupiedUntil = startAt.plusSeconds((duration + service.getCleanupMinutes()) * 60L);
 		if (reservationRepository.existsOverlappingReservation(command.storeId(), command.staffId(), ACTIVE_STATUSES,
-			startAt, occupiedUntil)) {
+			ReservationStatus.HELD, clock.instant(), startAt, occupiedUntil)) {
 			throw new BusinessException(ErrorCode.RESERVATION_SLOT_ALREADY_TAKEN);
 		}
 		throw new BusinessException(ErrorCode.STAFF_NOT_AVAILABLE);
@@ -209,4 +241,6 @@ public class ReservationBookingService {
 	private record ConfirmedBooking(UUID storeId, UUID customerId, UUID serviceId, UUID staffId,
 		ReservationSource source, Instant startAt, Instant serviceEndAt, Instant occupiedUntil, int partySize,
 		String customerNote, ErrorCode staffConflictCode, ErrorCode customerConflictCode) { }
+
+	private record PreparedCustomerBooking(StorePolicy policy, AvailabilitySlotResponse slot) { }
 }

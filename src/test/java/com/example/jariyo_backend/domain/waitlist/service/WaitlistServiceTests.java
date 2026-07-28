@@ -12,6 +12,9 @@ import com.example.jariyo_backend.common.async.AsyncEventRecorder;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.common.idempotency.PersistentIdempotencyService;
+import com.example.jariyo_backend.domain.reservation.entity.Reservation;
+import com.example.jariyo_backend.domain.reservation.entity.ReservationSource;
+import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
 import com.example.jariyo_backend.domain.reservation.service.ReservationBookingService;
 import com.example.jariyo_backend.domain.store.entity.ServiceOffering;
 import com.example.jariyo_backend.domain.store.entity.Store;
@@ -25,6 +28,7 @@ import com.example.jariyo_backend.domain.user.entity.CustomerProfile;
 import com.example.jariyo_backend.domain.user.entity.UserAccount;
 import com.example.jariyo_backend.domain.user.repository.CustomerProfileRepository;
 import com.example.jariyo_backend.domain.user.repository.StoreMemberRepository;
+import com.example.jariyo_backend.domain.waitlist.entity.SlotOffer;
 import com.example.jariyo_backend.domain.waitlist.entity.StaffPreferenceType;
 import com.example.jariyo_backend.domain.waitlist.entity.WaitlistEntry;
 import com.example.jariyo_backend.domain.waitlist.repository.SlotOfferRepository;
@@ -41,6 +45,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -107,6 +112,43 @@ class WaitlistServiceTests {
 		assertEquals("커트", detail.service().name());
 	}
 
+	@Test
+	void acceptBooksReservationWithCustomerProfileId() throws Exception {
+		UUID userId = UUID.randomUUID();
+		UUID customerId = UUID.randomUUID();
+		UUID waitlistId = UUID.randomUUID();
+		UUID offerId = UUID.randomUUID();
+		UUID storeId = UUID.randomUUID();
+		UUID serviceId = UUID.randomUUID();
+		UUID staffId = UUID.randomUUID();
+		Instant startAt = Instant.parse("2026-07-26T01:00:00Z");
+		Instant serviceEndAt = Instant.parse("2026-07-26T01:30:00Z");
+		Instant occupiedUntil = Instant.parse("2026-07-26T01:40:00Z");
+		CustomerProfile customer = customerProfile(customerId);
+		WaitlistEntry entry = new WaitlistEntry(storeId, customerId, serviceId, staffId,
+			StaffPreferenceType.SPECIFIC_ONLY, LocalDate.of(2026, 7, 26), LocalTime.of(10, 0),
+			LocalTime.of(11, 0), 1, 1, Instant.parse("2026-07-27T00:00:00Z"));
+		entry.markOffered();
+		setId(entry, waitlistId);
+		SlotOffer offer = new SlotOffer(waitlistId, storeId, serviceId, staffId, startAt, serviceEndAt,
+			occupiedUntil, UUID.randomUUID(), Instant.parse("2026-07-26T00:10:00Z"));
+		setId(offer, offerId);
+		Reservation reservation = new Reservation(UUID.randomUUID(), storeId, customerId, serviceId, staffId,
+			ReservationSource.WAITLIST_OFFER, ReservationStatus.CONFIRMED, startAt, serviceEndAt, occupiedUntil, 1);
+		when(customerProfileRepository.findByUser_Id(userId)).thenReturn(Optional.of(customer));
+		when(slotOfferRepository.findByIdForUpdate(offerId)).thenReturn(Optional.of(offer));
+		when(waitlistEntryRepository.findByIdForUpdate(waitlistId)).thenReturn(Optional.of(entry));
+		when(reservationBookingService.bookFromWaitlist(customerId, storeId, serviceId, staffId, startAt,
+			serviceEndAt, occupiedUntil, 1)).thenReturn(reservation);
+		mockIdempotentAcceptExecution();
+		WaitlistService service = waitlistService();
+
+		service.accept(userId, offerId, "key");
+
+		verify(reservationBookingService).bookFromWaitlist(customerId, storeId, serviceId, staffId, startAt,
+			serviceEndAt, occupiedUntil, 1);
+	}
+
 	private WaitlistService waitlistService() {
 		return new WaitlistService(waitlistEntryRepository, slotOfferRepository, slotOfferStatusHistoryRepository,
 			customerProfileRepository, storeRepository, storePolicyRepository, serviceRepository, staffServiceRepository,
@@ -122,6 +164,15 @@ class WaitlistServiceTests {
 		}).when(idempotencyService).execute(any(), any(), any(), any(), eq(WaitlistService.WaitlistCancelResult.class), any());
 	}
 
+	private void mockIdempotentAcceptExecution() {
+		doAnswer(invocation -> {
+			@SuppressWarnings("unchecked")
+			java.util.function.Supplier<WaitlistService.AcceptSlotOfferResult> action = invocation.getArgument(5);
+			return action.get();
+		}).when(idempotencyService).execute(any(), any(), any(), any(),
+			eq(WaitlistService.AcceptSlotOfferResult.class), any());
+	}
+
 	private CustomerProfile customerProfile(UUID customerId) throws Exception {
 		CustomerProfile customer = new CustomerProfile(new UserAccount("user@example.com", "+821012345678", "hash"),
 			"류승엽", false, true);
@@ -135,6 +186,12 @@ class WaitlistServiceTests {
 		var field = WaitlistEntry.class.getDeclaredField("id");
 		field.setAccessible(true);
 		field.set(entry, id);
+	}
+
+	private void setId(SlotOffer offer, UUID id) throws Exception {
+		var field = SlotOffer.class.getDeclaredField("id");
+		field.setAccessible(true);
+		field.set(offer, id);
 	}
 
 	private ServiceOffering serviceOffering(UUID serviceId, UUID storeId, String name) {

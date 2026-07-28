@@ -8,9 +8,12 @@ import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.CancelReservationCommand;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.CancelReservationResult;
+import com.example.jariyo_backend.domain.reservation.service.ReservationService.ConfirmReservationResult;
+import com.example.jariyo_backend.domain.reservation.service.ReservationService.CreateHoldCommand;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.CreateReservationCommand;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.NamedRef;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationCreateResult;
+import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationHoldResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -72,5 +75,49 @@ class ReservationControllerTests {
 		assertEquals(ReservationStatus.CANCELLED, response.getBody().data().status());
 		verify(reservationService).cancelMine(userId, reservationId, "cancel-key",
 			new CancelReservationCommand("개인 일정"));
+	}
+
+	@Test
+	void createHoldReturnsCreatedHold() {
+		ReservationController controller = new ReservationController(reservationService);
+		UUID userId = UUID.randomUUID();
+		UUID storeId = UUID.randomUUID();
+		UUID serviceId = UUID.randomUUID();
+		UUID staffId = UUID.randomUUID();
+		UUID reservationId = UUID.randomUUID();
+		OffsetDateTime startAt = OffsetDateTime.parse("2026-07-28T14:00:00+09:00");
+		OffsetDateTime expiresAt = OffsetDateTime.parse("2026-07-28T10:10:00+09:00");
+		ReservationController.CreateHoldRequest request =
+			new ReservationController.CreateHoldRequest(storeId, serviceId, staffId, startAt, 1);
+		CreateHoldCommand command = new CreateHoldCommand(storeId, serviceId, staffId, startAt, 1);
+		when(jwt.getSubject()).thenReturn(userId.toString());
+		when(reservationService.createHold(userId, "hold-key", command))
+			.thenReturn(new ReservationHoldResult(reservationId, ReservationStatus.HELD, expiresAt));
+
+		ResponseEntity<ApiResponse<ReservationHoldResult>> response =
+			controller.createHold(jwt, "hold-key", request);
+
+		assertEquals(201, response.getStatusCode().value());
+		assertEquals(reservationId, response.getBody().data().reservationId());
+		assertEquals(ReservationStatus.HELD, response.getBody().data().status());
+		verify(reservationService).createHold(userId, "hold-key", command);
+	}
+
+	@Test
+	void confirmReturnsConfirmedReservation() {
+		ReservationController controller = new ReservationController(reservationService);
+		UUID userId = UUID.randomUUID();
+		UUID reservationId = UUID.randomUUID();
+		OffsetDateTime confirmedAt = OffsetDateTime.parse("2026-07-28T10:03:00+09:00");
+		when(jwt.getSubject()).thenReturn(userId.toString());
+		when(reservationService.confirm(userId, reservationId, "confirm-key"))
+			.thenReturn(new ConfirmReservationResult(reservationId, ReservationStatus.CONFIRMED, confirmedAt));
+
+		ResponseEntity<ApiResponse<ConfirmReservationResult>> response =
+			controller.confirm(jwt, reservationId, "confirm-key");
+
+		assertEquals(200, response.getStatusCode().value());
+		assertEquals(ReservationStatus.CONFIRMED, response.getBody().data().status());
+		verify(reservationService).confirm(userId, reservationId, "confirm-key");
 	}
 }
