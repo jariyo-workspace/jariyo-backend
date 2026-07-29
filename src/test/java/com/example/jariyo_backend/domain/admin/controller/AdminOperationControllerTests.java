@@ -7,10 +7,13 @@ import java.util.List;
 import java.util.UUID;
 import com.example.jariyo_backend.common.api.ApiResponse;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService;
+import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AuditActor;
+import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AuditLogItem;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AdminReservationItem;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AdminWaitlistItem;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.TodayDashboard;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.TodaySummary;
+import com.example.jariyo_backend.domain.admin.entity.AuditActorType;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
 import com.example.jariyo_backend.domain.waitlist.entity.WaitlistStatus;
 import org.junit.jupiter.api.Test;
@@ -75,6 +78,24 @@ class AdminOperationControllerTests {
 
 		assertEquals(payload, response.getBody().data());
 		verify(adminOperationQueryService).listWaitlists(userId, storeId, null, null, null, null);
+	}
+
+	@Test
+	void listAuditLogsWrapsPayload() {
+		UUID userId = UUID.randomUUID();
+		UUID storeId = UUID.randomUUID();
+		List<AuditLogItem> payload = List.of(new AuditLogItem(UUID.randomUUID(),
+			new AuditActor(AuditActorType.STORE_MEMBER, UUID.randomUUID(), "민지"), "WALK_IN_REORDERED",
+			"WALK_IN_ENTRY", UUID.randomUUID(), "고객 요청", Instant.parse("2026-07-24T10:00:00Z")));
+		when(adminOperationQueryService.listAuditLogs(userId, storeId, null, null, null, null, null, null, null, null))
+			.thenReturn(payload);
+		AdminOperationController controller = new AdminOperationController(adminOperationQueryService);
+
+		ResponseEntity<ApiResponse<List<AuditLogItem>>> response = controller.listAuditLogs(jwt(userId), storeId, null,
+			null, null, null, null, null, null, null);
+
+		assertEquals(payload, response.getBody().data());
+		verify(adminOperationQueryService).listAuditLogs(userId, storeId, null, null, null, null, null, null, null, null);
 	}
 
 	private Jwt jwt(UUID userId) {

@@ -8,6 +8,9 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import com.example.jariyo_backend.domain.admin.entity.AuditActorType;
+import com.example.jariyo_backend.domain.admin.entity.AuditLog;
+import com.example.jariyo_backend.domain.admin.repository.AuditLogRepository;
 import com.example.jariyo_backend.domain.reservation.entity.Reservation;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationSource;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
@@ -55,6 +58,7 @@ class AdminOperationQueryServiceTests {
 	@Mock WaitlistEntryRepository waitlistEntryRepository;
 	@Mock SlotOfferRepository slotOfferRepository;
 	@Mock WalkInEntryRepository walkInEntryRepository;
+	@Mock AuditLogRepository auditLogRepository;
 	@Mock CustomerProfileRepository customerProfileRepository;
 	@Mock ServiceRepository serviceRepository;
 	@Mock StoreMemberRepository storeMemberRepository;
@@ -141,9 +145,49 @@ class AdminOperationQueryServiceTests {
 		assertEquals("수진", result.get(0).preferredStaffName());
 	}
 
+	@Test
+	void listAuditLogsReturnsFilteredPageWithDisplayNames() {
+		UUID userId = UUID.randomUUID();
+		UUID storeId = UUID.randomUUID();
+		Clock clock = Clock.fixed(Instant.parse("2026-07-24T00:00:00Z"), ZoneOffset.UTC);
+		AdminOperationQueryService service = service(clock);
+		UUID memberId = UUID.randomUUID();
+		UUID customerId = UUID.randomUUID();
+		UUID targetId = UUID.randomUUID();
+		AuditLog newest = new AuditLog(storeId, AuditActorType.STORE_MEMBER, memberId, "WALK_IN_REORDERED",
+			"WALK_IN_ENTRY", targetId, "고객 요청", "{\"before\":1}", "{\"after\":2}", "req-1",
+			Instant.parse("2026-07-24T10:00:00Z"));
+		AuditLog older = new AuditLog(storeId, AuditActorType.CUSTOMER, customerId, "WAITLIST_PROMOTED",
+			"WAITLIST_ENTRY", UUID.randomUUID(), null, null, "{\"status\":\"PROMOTED\"}", "req-2",
+			Instant.parse("2026-07-24T09:00:00Z"));
+		AuditLog oldest = new AuditLog(storeId, AuditActorType.SYSTEM, null, "FAILED_JOB_RETRIED",
+			"FAILED_ASYNC_JOB", UUID.randomUUID(), "자동 재시도", null, null, "req-3",
+			Instant.parse("2026-07-24T08:00:00Z"));
+		setField(newest, "id", UUID.randomUUID());
+		setField(older, "id", UUID.randomUUID());
+		setField(oldest, "id", UUID.randomUUID());
+		when(auditLogRepository.findAllByStoreIdAndFilters(storeId, null, null, null, null, null, null))
+			.thenReturn(List.of(newest, older, oldest));
+		UserAccount user = new UserAccount("staff@example.com", "+821055555555", "hash");
+		when(storeMemberRepository.findAllByStoreIdAndIdInOrderByCreatedAtAsc(eq(storeId), org.mockito.ArgumentMatchers.<UUID>anyCollection()))
+			.thenReturn(List.of(new StoreMember(memberId, storeId, user, StoreMemberRole.MANAGER, "민지", true)));
+		CustomerProfile profile = new CustomerProfile(user, "고객", true, true);
+		setField(profile, "id", customerId);
+		when(customerProfileRepository.findAllById(anyIterable())).thenReturn(List.of(profile));
+
+		List<AdminOperationQueryService.AuditLogItem> result = service.listAuditLogs(userId, storeId, null, null, null,
+			null, null, null, null, 2);
+
+		verify(storeAuthorizationService).requireManager(userId, storeId);
+		assertEquals(2, result.size());
+		assertEquals("민지", result.get(0).actor().displayName());
+		assertEquals("고객", result.get(1).actor().displayName());
+		assertEquals("고객 요청", result.get(0).reason());
+	}
+
 	private AdminOperationQueryService service(Clock clock) {
 		return new AdminOperationQueryService(storeAuthorizationService, storeRepository, storePolicyRepository,
-			reservationRepository, waitlistEntryRepository, slotOfferRepository, walkInEntryRepository,
+			reservationRepository, waitlistEntryRepository, slotOfferRepository, walkInEntryRepository, auditLogRepository,
 			customerProfileRepository, serviceRepository, storeMemberRepository, clock);
 	}
 

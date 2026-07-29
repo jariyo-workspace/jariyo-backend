@@ -1,13 +1,17 @@
 package com.example.jariyo_backend.domain.admin.controller;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import com.example.jariyo_backend.common.api.ApiResponse;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService;
+import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AuditLogItem;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AdminReservationItem;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AdminWaitlistItem;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.TodayDashboard;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
 import com.example.jariyo_backend.domain.waitlist.entity.WaitlistStatus;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -54,6 +58,19 @@ public class AdminOperationController {
 		@RequestParam(required = false) UUID serviceId, @RequestParam(required = false) UUID staffId,
 		@RequestParam(required = false) WaitlistStatus status) {
 		return ok(adminOperationQueryService.listWaitlists(userId(jwt), storeId, date, serviceId, staffId, status));
+	}
+
+	@GetMapping("/audit-logs")
+	public ResponseEntity<ApiResponse<List<AuditLogItem>>> listAuditLogs(@AuthenticationPrincipal Jwt jwt,
+		@PathVariable UUID storeId, @RequestParam(required = false) UUID actorId,
+		@RequestParam(required = false) String action, @RequestParam(required = false) String targetType,
+		@RequestParam(required = false) UUID targetId,
+		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+		@RequestParam(required = false) String cursor,
+		@RequestParam(required = false) @Min(1) @Max(100) Integer limit) {
+		return ok(adminOperationQueryService.listAuditLogs(userId(jwt), storeId, actorId, action, targetType, targetId,
+			from, to, cursor, limit));
 	}
 
 	private UUID userId(Jwt jwt) {
