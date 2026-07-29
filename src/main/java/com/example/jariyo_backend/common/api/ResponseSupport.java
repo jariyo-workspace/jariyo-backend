@@ -12,6 +12,10 @@ public final class ResponseSupport {
 		return ResponseEntity.ok(ApiResponse.success(data));
 	}
 
+	public static <T> ResponseEntity<ApiResponse<T>> ok(T data, ApiResponse.PageBody page) {
+		return ResponseEntity.ok(ApiResponse.success(data, page));
+	}
+
 	public static <T> ResponseEntity<ApiResponse<T>> created(T data) {
 		return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(data));
 	}

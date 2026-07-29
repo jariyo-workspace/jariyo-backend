@@ -64,6 +64,7 @@ public enum ErrorCode {
 	SERVICE_NOT_FOUND("SERVICE_NOT_FOUND", HttpStatus.NOT_FOUND, "서비스를 찾을 수 없습니다."),
 	STAFF_NOT_FOUND("STAFF_NOT_FOUND", HttpStatus.NOT_FOUND, "직원을 찾을 수 없습니다."),
 	FAILED_JOB_NOT_FOUND("FAILED_JOB_NOT_FOUND", HttpStatus.NOT_FOUND, "실패 작업을 찾을 수 없습니다."),
+	FAILED_JOB_INVALID_STATE("FAILED_JOB_INVALID_STATE", HttpStatus.CONFLICT, "현재 실패 작업 상태에서는 요청을 처리할 수 없습니다."),
 	INVALID_AVAILABILITY_RANGE("INVALID_AVAILABILITY_RANGE", HttpStatus.BAD_REQUEST, "조회 기간이 올바르지 않습니다."),
 	INVALID_PARTY_SIZE("INVALID_PARTY_SIZE", HttpStatus.BAD_REQUEST, "예약 인원 수가 서비스 정책과 맞지 않습니다."),
 	UNAUTHORIZED("AUTH-401", HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
