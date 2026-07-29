@@ -78,7 +78,7 @@ class AvailabilityServiceTests {
 			StoreMemberRole.STAFF, "디자이너", true);
 
 		mockStoreGraph(storeId, serviceId, staffId, staff, date);
-		when(reservationRepository.findActiveReservationsForAvailability(eq(storeId), any(), any(), any(), any()))
+		when(reservationRepository.findActiveReservationsForAvailability(eq(storeId), any(), any(), any(), any(), any(), any()))
 			.thenReturn(List.of(new Reservation(
 				UUID.randomUUID(),
 				storeId,
@@ -143,7 +143,7 @@ class AvailabilityServiceTests {
 		when(scheduleExceptionRepository.findAllByStoreIdAndTargetDateBetween(storeId, date, date)).thenReturn(List.of());
 		when(businessHourRepository.findAllByStoreId(storeId)).thenReturn(List.of(
 			new BusinessHour(UUID.randomUUID(), storeId, DayOfWeek.THURSDAY, LocalTime.of(9, 0), LocalTime.of(11, 0), false)));
-		when(reservationRepository.findActiveReservationsForAvailability(eq(storeId), any(), any(), any(), any()))
+		when(reservationRepository.findActiveReservationsForAvailability(eq(storeId), any(), any(), any(), any(), any(), any()))
 			.thenReturn(List.of());
 
 		AvailabilityResponse response = service.getAvailability(storeId, serviceId, null, date, date, 1);
@@ -170,7 +170,7 @@ class AvailabilityServiceTests {
 		when(scheduleExceptionRepository.findAllByStoreIdAndTargetDateBetween(storeId, date, date)).thenReturn(List.of(
 			new ScheduleException(UUID.randomUUID(), storeId, date, ScheduleExceptionType.CLOSED_ALL_DAY,
 				null, null, "휴무", null)));
-		when(reservationRepository.findActiveReservationsForAvailability(eq(storeId), any(), any(), any(), any()))
+		when(reservationRepository.findActiveReservationsForAvailability(eq(storeId), any(), any(), any(), any(), any(), any()))
 			.thenReturn(List.of());
 
 		AvailabilityResponse response = service.getAvailability(storeId, serviceId, staffId, date, date, 1);
@@ -228,7 +228,7 @@ class AvailabilityServiceTests {
 		when(businessHourRepository.findAllByStoreId(storeId)).thenReturn(List.of(
 			new BusinessHour(UUID.randomUUID(), storeId, DayOfWeek.WEDNESDAY, LocalTime.of(9, 0), LocalTime.of(11, 0), false),
 			new BusinessHour(UUID.randomUUID(), storeId, DayOfWeek.THURSDAY, LocalTime.of(9, 0), LocalTime.of(11, 0), false)));
-		when(reservationRepository.findActiveReservationsForAvailability(eq(storeId), any(), any(), any(), any()))
+		when(reservationRepository.findActiveReservationsForAvailability(eq(storeId), any(), any(), any(), any(), any(), any()))
 			.thenReturn(List.of());
 
 		AvailabilityResponse response = service.getAvailability(storeId, serviceId, staffId, inRangeDate, outOfRangeDate, 1);

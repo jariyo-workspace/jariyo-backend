@@ -11,7 +11,10 @@ import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.CancelReservationCommand;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.CancelReservationResult;
+import com.example.jariyo_backend.domain.reservation.service.ReservationService.ConfirmReservationResult;
+import com.example.jariyo_backend.domain.reservation.service.ReservationService.CreateHoldCommand;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.CreateReservationCommand;
+import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationHoldResult;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationCreateResult;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationDetail;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationHistoryResult;
@@ -53,6 +56,20 @@ public class ReservationController {
 				request.partySize(), request.customerNote())));
 	}
 
+	@PostMapping("/reservation-holds")
+	public ResponseEntity<ApiResponse<ReservationHoldResult>> createHold(@AuthenticationPrincipal Jwt jwt,
+		@RequestHeader(IdempotencyKey.HEADER_NAME) String key, @Valid @RequestBody CreateHoldRequest request) {
+		return ResponseSupport.created(reservationService.createHold(userId(jwt), key,
+			new CreateHoldCommand(request.storeId(), request.serviceId(), request.staffId(), request.startAt(),
+				request.partySize())));
+	}
+
+	@PostMapping("/reservations/{reservationId}/confirm")
+	public ResponseEntity<ApiResponse<ConfirmReservationResult>> confirm(@AuthenticationPrincipal Jwt jwt,
+		@PathVariable UUID reservationId, @RequestHeader(IdempotencyKey.HEADER_NAME) String key) {
+		return ResponseSupport.ok(reservationService.confirm(userId(jwt), reservationId, key));
+	}
+
 	@GetMapping("/me/reservations")
 	public ResponseEntity<ApiResponse<List<ReservationSummary>>> listMine(@AuthenticationPrincipal Jwt jwt,
 		@RequestParam(required = false) ReservationStatus status,
@@ -88,6 +105,9 @@ public class ReservationController {
 	public record CreateReservationRequest(@NotNull UUID storeId, @NotNull UUID serviceId, @NotNull UUID staffId,
 		@NotNull OffsetDateTime startAt, @Min(1) @Max(20) int partySize,
 		@Size(max = 1000) String customerNote) { }
+
+	public record CreateHoldRequest(@NotNull UUID storeId, @NotNull UUID serviceId, @NotNull UUID staffId,
+		@NotNull OffsetDateTime startAt, @Min(1) @Max(20) int partySize) { }
 
 	public record CancelReservationRequest(@NotBlank @Size(max = 255) String reason) { }
 }

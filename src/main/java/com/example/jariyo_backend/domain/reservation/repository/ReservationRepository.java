@@ -25,6 +25,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 		where r.storeId = :storeId
 			and r.assignedStaffId in :staffIds
 			and r.status in :statuses
+			and (r.status <> :heldStatus or r.holdExpiresAt > :now)
 			and r.occupiedUntil > :rangeStart
 			and r.startAt < :rangeEnd
 		""")
@@ -32,6 +33,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 		@Param("storeId") UUID storeId,
 		@Param("staffIds") Collection<UUID> staffIds,
 		@Param("statuses") Collection<ReservationStatus> statuses,
+		@Param("heldStatus") ReservationStatus heldStatus,
+		@Param("now") Instant now,
 		@Param("rangeStart") Instant rangeStart,
 		@Param("rangeEnd") Instant rangeEnd);
 
@@ -40,6 +43,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 		where r.storeId = :storeId
 			and ((:staffId is null and r.assignedStaffId is null) or r.assignedStaffId = :staffId)
 			and r.status in :statuses
+			and (r.status <> :heldStatus or r.holdExpiresAt > :now)
 			and r.occupiedUntil > :rangeStart
 			and r.startAt < :rangeEnd
 		""")
@@ -47,6 +51,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 		@Param("storeId") UUID storeId,
 		@Param("staffId") UUID staffId,
 		@Param("statuses") Collection<ReservationStatus> statuses,
+		@Param("heldStatus") ReservationStatus heldStatus,
+		@Param("now") Instant now,
 		@Param("rangeStart") Instant rangeStart,
 		@Param("rangeEnd") Instant rangeEnd);
 
@@ -68,12 +74,23 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 		select case when count(r) > 0 then true else false end from Reservation r
 		where r.customerId = :customerId
 			and r.status in :statuses
+			and (r.status <> :heldStatus or r.holdExpiresAt > :now)
 			and r.occupiedUntil > :rangeStart
 			and r.startAt < :rangeEnd
 		""")
 	boolean existsOverlappingCustomerReservation(
 		@Param("customerId") UUID customerId,
 		@Param("statuses") Collection<ReservationStatus> statuses,
+		@Param("heldStatus") ReservationStatus heldStatus,
+		@Param("now") Instant now,
 		@Param("rangeStart") Instant rangeStart,
 		@Param("rangeEnd") Instant rangeEnd);
+
+	@Query("""
+		select r.id from Reservation r
+		where r.status = :status
+			and r.holdExpiresAt <= :now
+		order by r.holdExpiresAt asc
+		""")
+	List<UUID> findExpiredHoldIds(@Param("status") ReservationStatus status, @Param("now") Instant now);
 }

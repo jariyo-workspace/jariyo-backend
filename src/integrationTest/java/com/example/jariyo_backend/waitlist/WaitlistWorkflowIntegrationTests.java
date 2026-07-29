@@ -237,7 +237,7 @@ class WaitlistWorkflowIntegrationTests {
 				(id, store_id, customer_id, service_id, assigned_staff_id, source, status, start_at, service_end_at,
 				 occupied_until, party_size, confirmed_at, version, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, 'CUSTOMER_BOOKING', 'CONFIRMED', ?, ?, ?, 1, now(), 0, now(), now())
-			""", RESERVATION_ID, STORE_ID, RESERVATION_USER_ID, SERVICE_ID, STAFF_MEMBER_ID,
+			""", RESERVATION_ID, STORE_ID, RESERVATION_CUSTOMER_ID, SERVICE_ID, STAFF_MEMBER_ID,
 			Timestamp.from(startAt.toInstant()), Timestamp.from(startAt.plusMinutes(30).toInstant()),
 			Timestamp.from(startAt.plusMinutes(40).toInstant()));
 	}

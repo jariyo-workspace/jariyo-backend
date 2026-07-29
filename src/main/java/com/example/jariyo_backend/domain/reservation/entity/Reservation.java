@@ -11,6 +11,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "reservation")
@@ -78,6 +79,7 @@ public class Reservation {
 	@Column(name = "completed_at")
 	private Instant completedAt;
 
+	@Version
 	@Column(nullable = false)
 	private long version;
 
@@ -118,6 +120,16 @@ public class Reservation {
 		return reservation;
 	}
 
+	public static Reservation held(UUID storeId, UUID customerId, UUID serviceId, UUID assignedStaffId,
+		ReservationSource source, Instant startAt, Instant serviceEndAt, Instant occupiedUntil, int partySize,
+		String customerNote, Instant holdExpiresAt) {
+		Reservation reservation = new Reservation(null, storeId, customerId, serviceId, assignedStaffId, source,
+			ReservationStatus.HELD, startAt, serviceEndAt, occupiedUntil, partySize);
+		reservation.customerNote = customerNote;
+		reservation.holdExpiresAt = holdExpiresAt;
+		return reservation;
+	}
+
 	public boolean belongsToCustomer(UUID customerId) {
 		return this.customerId.equals(customerId);
 	}
@@ -136,6 +148,21 @@ public class Reservation {
 		this.cancelledAt = cancelledAt;
 		this.cancelledByType = "CUSTOMER";
 		this.cancelledById = customerId;
+	}
+
+	public boolean isHoldExpiredAt(Instant now) {
+		return status == ReservationStatus.HELD
+			&& holdExpiresAt != null
+			&& !holdExpiresAt.isAfter(now);
+	}
+
+	public void confirm(Instant confirmedAt) {
+		this.status = ReservationStatus.CONFIRMED;
+		this.confirmedAt = confirmedAt;
+	}
+
+	public void expireHold() {
+		this.status = ReservationStatus.EXPIRED;
 	}
 
 	public UUID getId() {
@@ -200,6 +227,10 @@ public class Reservation {
 
 	public Instant getConfirmedAt() {
 		return confirmedAt;
+	}
+
+	public Instant getHoldExpiresAt() {
+		return holdExpiresAt;
 	}
 
 	public String getCustomerNote() {

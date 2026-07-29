@@ -157,7 +157,8 @@ public class AvailabilityService {
 				Collectors.groupingBy(StaffScheduleException::getTargetDate)));
 		Map<UUID, List<Reservation>> reservationsByStaffId = reservationRepository
 			.findActiveReservationsForAvailability(storeId, staffIds, ACTIVE_RESERVATION_STATUSES,
-				from.atStartOfDay(zoneId).toInstant(), to.plusDays(1).atStartOfDay(zoneId).toInstant())
+				ReservationStatus.HELD, clock.instant(), from.atStartOfDay(zoneId).toInstant(),
+				to.plusDays(1).atStartOfDay(zoneId).toInstant())
 			.stream()
 			.collect(Collectors.groupingBy(Reservation::getAssignedStaffId));
 		Map<DayOfWeekValue, List<BusinessHour>> businessHoursByDay = businessHourRepository.findAllByStoreId(storeId)

@@ -2,6 +2,8 @@ package com.example.jariyo_backend.reservation;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
@@ -18,7 +20,9 @@ import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
 import com.example.jariyo_backend.domain.reservation.repository.ReservationRepository;
 import com.example.jariyo_backend.domain.reservation.repository.ReservationStatusHistoryRepository;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService;
+import com.example.jariyo_backend.domain.reservation.service.ReservationHoldExpirationService;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.CancelReservationCommand;
+import com.example.jariyo_backend.domain.reservation.service.ReservationService.CreateHoldCommand;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.CreateReservationCommand;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationCreateResult;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationHistoryResult;
@@ -59,6 +63,7 @@ class ReservationWorkflowIntegrationTests {
 	@Autowired ReservationService reservationService;
 	@Autowired ReservationRepository reservationRepository;
 	@Autowired ReservationStatusHistoryRepository historyRepository;
+	@Autowired ReservationHoldExpirationService holdExpirationService;
 
 	@DynamicPropertySource
 	static void registerProperties(DynamicPropertyRegistry registry) {
@@ -278,6 +283,87 @@ class ReservationWorkflowIntegrationTests {
 		}
 	}
 
+	@Test
+	void createsConfirmsAndRetriesHoldIdempotently() {
+		CreateHoldCommand command = holdCommand(STAFF_A_ID, LocalTime.of(14, 0));
+
+		var held = reservationService.createHold(CUSTOMER_A_ID, "hold-create", command);
+		var retriedHold = reservationService.createHold(CUSTOMER_A_ID, "hold-create", command);
+
+		assertEquals(held.reservationId(), retriedHold.reservationId());
+		assertEquals(ReservationStatus.HELD, held.status());
+		assertEquals(1, reservationRepository.count());
+
+		BusinessException conflict = assertThrows(BusinessException.class, () -> reservationService.createHold(
+			CUSTOMER_B_ID, "hold-conflict", holdCommand(STAFF_A_ID, LocalTime.of(14, 0))));
+		assertEquals(ErrorCode.RESERVATION_SLOT_ALREADY_TAKEN, conflict.getErrorCode());
+
+		var confirmed = reservationService.confirm(CUSTOMER_A_ID, held.reservationId(), "hold-confirm");
+		var retriedConfirmation = reservationService.confirm(CUSTOMER_A_ID, held.reservationId(), "hold-confirm");
+
+		assertEquals(confirmed.confirmedAt(), retriedConfirmation.confirmedAt());
+		assertEquals(ReservationStatus.CONFIRMED, confirmed.status());
+		assertEquals(List.of("HOLD_CREATED", "HOLD_CONFIRMED"),
+			reservationService.historyMine(CUSTOMER_A_ID, held.reservationId()).stream()
+				.map(ReservationHistoryResult::reasonCode).toList());
+	}
+
+	@Test
+	void expiresHoldAndReleasesSlotForAnotherCustomer() {
+		var held = reservationService.createHold(CUSTOMER_A_ID, "expire-hold",
+			holdCommand(STAFF_A_ID, LocalTime.of(14, 0)));
+		jdbcTemplate.update("UPDATE reservation SET hold_expires_at = ? WHERE id = ?",
+			Timestamp.from(Instant.now().minusSeconds(1)), held.reservationId());
+
+		holdExpirationService.expireHolds();
+
+		assertEquals(ReservationStatus.EXPIRED,
+			reservationRepository.findById(held.reservationId()).orElseThrow().getStatus());
+		ReservationCreateResult created = reservationService.create(CUSTOMER_B_ID, "released-slot",
+			command(STAFF_A_ID, LocalTime.of(14, 0)));
+		assertEquals(ReservationStatus.CONFIRMED, created.status());
+	}
+
+	@Test
+	void expirationWinsRaceAgainstConfirmationAtBoundary() throws Exception {
+		var held = reservationService.createHold(CUSTOMER_A_ID, "race-hold",
+			holdCommand(STAFF_A_ID, LocalTime.of(14, 0)));
+		jdbcTemplate.update("UPDATE reservation SET hold_expires_at = ? WHERE id = ?",
+			Timestamp.from(Instant.now().minusSeconds(1)), held.reservationId());
+		CountDownLatch ready = new CountDownLatch(2);
+		CountDownLatch start = new CountDownLatch(1);
+		CompletableFuture<ErrorCode> confirmation = CompletableFuture.supplyAsync(() -> {
+			ready.countDown();
+			try {
+				start.await();
+				reservationService.confirm(CUSTOMER_A_ID, held.reservationId(), "race-confirm");
+				return null;
+			} catch (BusinessException exception) {
+				return exception.getErrorCode();
+			} catch (InterruptedException exception) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(exception);
+			}
+		});
+		CompletableFuture<Void> expiration = CompletableFuture.runAsync(() -> {
+			ready.countDown();
+			try {
+				start.await();
+				holdExpirationService.expireHolds();
+			} catch (InterruptedException exception) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(exception);
+			}
+		});
+
+		ready.await();
+		start.countDown();
+		assertEquals(ErrorCode.RESERVATION_HOLD_EXPIRED, confirmation.join());
+		expiration.join();
+		assertEquals(ReservationStatus.EXPIRED,
+			reservationRepository.findById(held.reservationId()).orElseThrow().getStatus());
+	}
+
 	private CompletableFuture<ErrorCode> concurrentCreate(UUID customerId, String key, CountDownLatch ready,
 		CountDownLatch start) {
 		return CompletableFuture.supplyAsync(() -> {
@@ -298,6 +384,11 @@ class ReservationWorkflowIntegrationTests {
 	private CreateReservationCommand command(UUID staffId, LocalTime time) {
 		OffsetDateTime startAt = ZonedDateTime.of(targetDate(), time, ZoneId.of("Asia/Seoul")).toOffsetDateTime();
 		return new CreateReservationCommand(STORE_ID, SERVICE_ID, staffId, startAt, 1, "테스트 요청");
+	}
+
+	private CreateHoldCommand holdCommand(UUID staffId, LocalTime time) {
+		OffsetDateTime startAt = ZonedDateTime.of(targetDate(), time, ZoneId.of("Asia/Seoul")).toOffsetDateTime();
+		return new CreateHoldCommand(STORE_ID, SERVICE_ID, staffId, startAt, 1);
 	}
 
 	private LocalDate targetDate() {
