@@ -93,6 +93,16 @@ public class FailedAsyncJob {
 		this.ignoredReason = null;
 	}
 
+	public void markPending() {
+		this.status = FailedJobStatus.PENDING;
+		this.ignoredReason = null;
+	}
+
+	public void markIgnored(String reason) {
+		this.status = FailedJobStatus.IGNORED;
+		this.ignoredReason = reason;
+	}
+
 	public FailedJobStatus getStatus() {
 		return status;
 	}
@@ -131,5 +141,9 @@ public class FailedAsyncJob {
 
 	public Instant getFailedAt() {
 		return failedAt;
+	}
+
+	public String getIgnoredReason() {
+		return ignoredReason;
 	}
 }
