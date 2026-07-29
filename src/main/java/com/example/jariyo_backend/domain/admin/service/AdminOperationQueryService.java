@@ -18,6 +18,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
+import com.example.jariyo_backend.domain.admin.entity.AuditActorType;
+import com.example.jariyo_backend.domain.admin.entity.AuditLog;
+import com.example.jariyo_backend.domain.admin.repository.AuditLogRepository;
 import com.example.jariyo_backend.domain.reservation.entity.Reservation;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
 import com.example.jariyo_backend.domain.reservation.repository.ReservationRepository;
@@ -60,6 +63,7 @@ public class AdminOperationQueryService {
 	private final WaitlistEntryRepository waitlistEntryRepository;
 	private final SlotOfferRepository slotOfferRepository;
 	private final WalkInEntryRepository walkInEntryRepository;
+	private final AuditLogRepository auditLogRepository;
 	private final CustomerProfileRepository customerProfileRepository;
 	private final ServiceRepository serviceRepository;
 	private final StoreMemberRepository storeMemberRepository;
@@ -68,7 +72,8 @@ public class AdminOperationQueryService {
 	public AdminOperationQueryService(StoreAuthorizationService storeAuthorizationService, StoreRepository storeRepository,
 		StorePolicyRepository storePolicyRepository, ReservationRepository reservationRepository,
 		WaitlistEntryRepository waitlistEntryRepository, SlotOfferRepository slotOfferRepository,
-		WalkInEntryRepository walkInEntryRepository, CustomerProfileRepository customerProfileRepository,
+		WalkInEntryRepository walkInEntryRepository, AuditLogRepository auditLogRepository,
+		CustomerProfileRepository customerProfileRepository,
 		ServiceRepository serviceRepository, StoreMemberRepository storeMemberRepository, Clock clock) {
 		this.storeAuthorizationService = storeAuthorizationService;
 		this.storeRepository = storeRepository;
@@ -77,6 +82,7 @@ public class AdminOperationQueryService {
 		this.waitlistEntryRepository = waitlistEntryRepository;
 		this.slotOfferRepository = slotOfferRepository;
 		this.walkInEntryRepository = walkInEntryRepository;
+		this.auditLogRepository = auditLogRepository;
 		this.customerProfileRepository = customerProfileRepository;
 		this.serviceRepository = serviceRepository;
 		this.storeMemberRepository = storeMemberRepository;
@@ -185,6 +191,33 @@ public class AdminOperationQueryService {
 			.toList();
 	}
 
+	@Transactional(readOnly = true)
+	public List<AuditLogItem> listAuditLogs(UUID userId, UUID storeId, UUID actorId, String action, String targetType,
+		UUID targetId, Instant from, Instant to, String cursor, Integer limit) {
+		storeAuthorizationService.requireManager(userId, storeId);
+		int max = limit == null ? 20 : Math.max(1, Math.min(limit, 100));
+		List<AuditLog> logs = auditLogRepository.findAllByStoreIdAndFilters(storeId, actorId, normalizeExact(action),
+			normalizeExact(targetType), targetId, from, to);
+		int startIndex = resolveCursorIndex(logs, cursor);
+		List<AuditLog> page = logs.stream()
+			.skip(startIndex)
+			.limit(max)
+			.toList();
+		Map<UUID, String> customerNames = customerNamesByProfileId(page.stream()
+			.filter(log -> log.getActorType() == AuditActorType.CUSTOMER && log.getActorId() != null)
+			.map(AuditLog::getActorId)
+			.collect(Collectors.toSet()));
+		Map<UUID, String> memberNames = storeMemberNamesById(storeId, page.stream()
+			.filter(log -> log.getActorType() == AuditActorType.STORE_MEMBER && log.getActorId() != null)
+			.map(AuditLog::getActorId)
+			.collect(Collectors.toSet()));
+		return page.stream()
+			.map(log -> new AuditLogItem(log.getId(),
+				new AuditActor(log.getActorType(), log.getActorId(), resolveActorDisplayName(log, customerNames, memberNames)),
+				log.getAction(), log.getTargetType(), log.getTargetId(), log.getReason(), log.getOccurredAt()))
+			.toList();
+	}
+
 	private List<DashboardAlert> buildAlerts(ZoneId zoneId, List<Reservation> noShowCandidates, List<SlotOffer> pendingOffers) {
 		List<DashboardAlert> noShowAlerts = noShowCandidates.stream()
 			.limit(5)
@@ -245,9 +278,47 @@ public class AdminOperationQueryService {
 			.collect(Collectors.toMap(StoreMember::getId, StoreMember::getDisplayName));
 	}
 
+	private Map<UUID, String> storeMemberNamesById(UUID storeId, Set<UUID> memberIds) {
+		if (memberIds.isEmpty()) return Map.of();
+		return storeMemberRepository.findAllByStoreIdAndIdInOrderByCreatedAtAsc(storeId, memberIds).stream()
+			.collect(Collectors.toMap(StoreMember::getId, StoreMember::getDisplayName));
+	}
+
 	private String normalize(String value) {
 		if (value == null || value.isBlank()) return null;
 		return value.trim().toLowerCase();
+	}
+
+	private String normalizeExact(String value) {
+		if (value == null || value.isBlank()) return null;
+		return value.trim();
+	}
+
+	private int resolveCursorIndex(List<AuditLog> logs, String cursor) {
+		if (cursor == null || cursor.isBlank()) {
+			return 0;
+		}
+		UUID cursorId;
+		try {
+			cursorId = UUID.fromString(cursor.trim());
+		}
+		catch (IllegalArgumentException exception) {
+			throw new BusinessException(ErrorCode.BAD_REQUEST, "cursor 형식이 올바르지 않습니다.");
+		}
+		for (int index = 0; index < logs.size(); index++) {
+			if (cursorId.equals(logs.get(index).getId())) {
+				return index + 1;
+			}
+		}
+		return logs.size();
+	}
+
+	private String resolveActorDisplayName(AuditLog log, Map<UUID, String> customerNames, Map<UUID, String> memberNames) {
+		return switch (log.getActorType()) {
+			case CUSTOMER -> log.getActorId() == null ? null : customerNames.getOrDefault(log.getActorId(), "-");
+			case STORE_MEMBER -> log.getActorId() == null ? null : memberNames.getOrDefault(log.getActorId(), "-");
+			case SYSTEM -> "SYSTEM";
+		};
 	}
 
 	private Store requireStore(UUID storeId) {
@@ -271,4 +342,7 @@ public class AdminOperationQueryService {
 	public record AdminWaitlistItem(UUID id, String customerName, String serviceName, String preferredStaffName,
 		LocalDate desiredDate, LocalTime acceptableStartTime, LocalTime acceptableEndTime, WaitlistStatus status,
 		int sequenceNumber, boolean pendingOffer, Instant pendingOfferExpiresAt) { }
+	public record AuditActor(AuditActorType type, UUID id, String displayName) { }
+	public record AuditLogItem(UUID id, AuditActor actor, String action, String targetType, UUID targetId, String reason,
+		Instant occurredAt) { }
 }
