@@ -18,6 +18,7 @@ import com.example.jariyo_backend.domain.reservation.service.ReservationService.
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationCreateResult;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationDetail;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationHistoryResult;
+import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationListResult;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationSummary;
 import com.example.jariyo_backend.domain.user.support.AuthenticatedUser;
 import jakarta.validation.Valid;
@@ -74,8 +75,10 @@ public class ReservationController {
 	public ResponseEntity<ApiResponse<List<ReservationSummary>>> listMine(@AuthenticationPrincipal Jwt jwt,
 		@RequestParam(required = false) ReservationStatus status,
 		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-		return ResponseSupport.ok(reservationService.listMine(userId(jwt), status, from, to));
+		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+		@RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit) {
+		ReservationListResult result = reservationService.listMine(userId(jwt), status, from, to, cursor, limit);
+		return ResponseSupport.ok(result.items(), result.page());
 	}
 
 	@GetMapping("/reservations/{reservationId}")

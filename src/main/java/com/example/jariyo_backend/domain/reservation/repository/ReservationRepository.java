@@ -8,13 +8,35 @@ import java.util.UUID;
 import com.example.jariyo_backend.domain.reservation.entity.Reservation;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ReservationRepository extends JpaRepository<Reservation, UUID> {
-	List<Reservation> findAllByCustomerIdOrderByStartAtDescIdDesc(UUID customerId);
+	@Query(value = """
+		select r.*
+		from reservation r
+		join store s on s.id = r.store_id
+		where r.customer_id = :customerId
+			and (cast(:status as text) is null or r.status = cast(:status as text))
+			and (cast(:fromDate as date) is null
+				or (r.start_at at time zone s.timezone)::date >= cast(:fromDate as date))
+			and (cast(:toDate as date) is null
+				or (r.start_at at time zone s.timezone)::date <= cast(:toDate as date))
+			and (cast(:cursorStartAt as timestamptz) is null
+				or (r.start_at, r.id) < (cast(:cursorStartAt as timestamptz), cast(:cursorId as uuid)))
+		order by r.start_at desc, r.id desc
+		""", nativeQuery = true)
+	List<Reservation> findPageByCustomerId(
+		@Param("customerId") UUID customerId,
+		@Param("status") String status,
+		@Param("fromDate") java.time.LocalDate fromDate,
+		@Param("toDate") java.time.LocalDate toDate,
+		@Param("cursorStartAt") Instant cursorStartAt,
+		@Param("cursorId") UUID cursorId,
+		Pageable pageable);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select r from Reservation r where r.id = :id")

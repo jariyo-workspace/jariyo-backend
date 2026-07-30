@@ -139,7 +139,7 @@ class ReservationWorkflowIntegrationTests {
 		assertFalse(reservationService.getMine(CUSTOMER_A_ID, created.id()).checkInAvailable());
 		assertTrue(reservationService.getMine(CUSTOMER_A_ID, created.id()).canCancel());
 		assertEquals(1, reservationService.listMine(CUSTOMER_A_ID, ReservationStatus.CONFIRMED,
-			targetDate(), targetDate()).size());
+			targetDate(), targetDate(), null, null).items().size());
 
 		var cancelled = reservationService.cancelMine(CUSTOMER_A_ID, created.id(), "reservation-cancel",
 			new CancelReservationCommand("개인 일정"));
@@ -187,11 +187,43 @@ class ReservationWorkflowIntegrationTests {
 			command(STAFF_A_ID, LocalTime.of(15, 0)));
 
 		var reservations = reservationService.listMine(CUSTOMER_A_ID, ReservationStatus.CONFIRMED,
-			targetDate(), targetDate());
+			targetDate(), targetDate(), null, null).items();
 
 		assertEquals(List.of(later.id(), earlier.id()), reservations.stream().map(value -> value.id()).toList());
 		assertTrue(reservationService.listMine(CUSTOMER_A_ID, null,
-			targetDate().plusDays(1), targetDate().plusDays(1)).isEmpty());
+			targetDate().plusDays(1), targetDate().plusDays(1), null, null).items().isEmpty());
+	}
+
+	@Test
+	void paginatesReservationListWithoutDuplicatesAcrossFiltersAndTies() {
+		Instant latest = targetDate().atTime(16, 0).atZone(ZoneId.of("Asia/Seoul")).toInstant();
+		Instant tied = targetDate().atTime(15, 0).atZone(ZoneId.of("Asia/Seoul")).toInstant();
+		Instant earlier = targetDate().atTime(14, 0).atZone(ZoneId.of("Asia/Seoul")).toInstant();
+		UUID latestId = UUID.fromString("00000000-0000-7000-8000-000000000a01");
+		UUID tiedLowId = UUID.fromString("00000000-0000-7000-8000-000000000a02");
+		UUID tiedHighId = UUID.fromString("00000000-0000-7000-8000-000000000a03");
+		UUID earlierId = UUID.fromString("00000000-0000-7000-8000-000000000a04");
+		insertReservation(latestId, latest, ReservationStatus.CONFIRMED);
+		insertReservation(tiedLowId, tied, ReservationStatus.CONFIRMED);
+		insertReservation(tiedHighId, tied, ReservationStatus.CONFIRMED);
+		insertReservation(earlierId, earlier, ReservationStatus.CONFIRMED);
+		insertReservation(UUID.fromString("00000000-0000-7000-8000-000000000a05"),
+			targetDate().atTime(13, 0).atZone(ZoneId.of("Asia/Seoul")).toInstant(), ReservationStatus.CANCELLED);
+		insertReservation(UUID.fromString("00000000-0000-7000-8000-000000000a06"),
+			targetDate().plusDays(1).atTime(17, 0).atZone(ZoneId.of("Asia/Seoul")).toInstant(),
+			ReservationStatus.CONFIRMED);
+
+		var first = reservationService.listMine(CUSTOMER_A_ID, ReservationStatus.CONFIRMED,
+			targetDate(), targetDate(), null, 2);
+		var second = reservationService.listMine(CUSTOMER_A_ID, ReservationStatus.CONFIRMED,
+			targetDate(), targetDate(), first.page().cursor(), 2);
+
+		assertEquals(List.of(latestId, tiedHighId), first.items().stream().map(item -> item.id()).toList());
+		assertTrue(first.page().hasNext());
+		assertEquals(List.of(tiedLowId, earlierId), second.items().stream().map(item -> item.id()).toList());
+		assertFalse(second.page().hasNext());
+		assertEquals(4, java.util.stream.Stream.concat(first.items().stream(), second.items().stream())
+			.map(item -> item.id()).distinct().count());
 	}
 
 	@Test
@@ -416,6 +448,17 @@ class ReservationWorkflowIntegrationTests {
 				(id, store_id, user_id, role, display_name, status, booking_enabled, created_at, updated_at)
 			VALUES (?, ?, ?, 'STAFF', ?, 'ACTIVE', true, now(), now())
 			""", memberId, STORE_ID, userId, displayName);
+	}
+
+	private void insertReservation(UUID id, Instant startAt, ReservationStatus status) {
+		jdbcTemplate.update("""
+			INSERT INTO reservation
+				(id, store_id, customer_id, service_id, assigned_staff_id, source, status,
+				 start_at, service_end_at, occupied_until, party_size, confirmed_at, version, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, 'CUSTOMER_BOOKING', ?, ?, ?, ?, 1, ?, 0, now(), now())
+			""", id, STORE_ID, CUSTOMER_A_PROFILE_ID, SERVICE_ID, STAFF_A_ID, status.name(),
+			Timestamp.from(startAt), Timestamp.from(startAt.plusSeconds(1800)),
+			Timestamp.from(startAt.plusSeconds(2400)), Timestamp.from(startAt));
 	}
 
 	private static KeyPair generateKeyPair() {

@@ -35,12 +35,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -233,13 +236,50 @@ class ReservationServiceTests {
 		UUID customerProfileId = UUID.randomUUID();
 		when(customerProfileRepository.findByUser_Id(userId))
 			.thenReturn(Optional.of(customer(customerProfileId)));
-		when(reservationRepository.findAllByCustomerIdOrderByStartAtDescIdDesc(customerProfileId))
+		when(reservationRepository.findPageByCustomerId(eq(customerProfileId), isNull(), isNull(), isNull(),
+			isNull(), isNull(), any(Pageable.class)))
 			.thenReturn(java.util.List.of());
 		ReservationService service = serviceAt("2026-07-26T00:00:00Z");
 
-		service.listMine(userId, null, null, null);
+		service.listMine(userId, null, null, null, null, null);
 
-		verify(reservationRepository).findAllByCustomerIdOrderByStartAtDescIdDesc(customerProfileId);
+		ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+		verify(reservationRepository).findPageByCustomerId(eq(customerProfileId), isNull(), isNull(), isNull(),
+			isNull(), isNull(), pageable.capture());
+		assertEquals(21, pageable.getValue().getPageSize());
+	}
+
+	@Test
+	void rejectsMalformedReservationCursor() throws Exception {
+		UUID userId = UUID.randomUUID();
+		when(customerProfileRepository.findByUser_Id(userId))
+			.thenReturn(Optional.of(customer(UUID.randomUUID())));
+
+		BusinessException exception = assertThrows(BusinessException.class,
+			() -> serviceAt("2026-07-26T00:00:00Z")
+				.listMine(userId, null, null, null, "not-a-cursor", 20));
+
+		assertEquals(ErrorCode.BAD_REQUEST, exception.getErrorCode());
+	}
+
+	@Test
+	void clampsReservationPageLimit() throws Exception {
+		UUID userId = UUID.randomUUID();
+		UUID customerProfileId = UUID.randomUUID();
+		when(customerProfileRepository.findByUser_Id(userId))
+			.thenReturn(Optional.of(customer(customerProfileId)));
+		when(reservationRepository.findPageByCustomerId(eq(customerProfileId), isNull(), isNull(), isNull(),
+			isNull(), isNull(), any(Pageable.class))).thenReturn(java.util.List.of());
+		ReservationService service = serviceAt("2026-07-26T00:00:00Z");
+
+		service.listMine(userId, null, null, null, null, 0);
+		service.listMine(userId, null, null, null, null, 101);
+
+		ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+		verify(reservationRepository, times(2)).findPageByCustomerId(eq(customerProfileId), isNull(), isNull(),
+			isNull(), isNull(), isNull(), pageable.capture());
+		assertEquals(java.util.List.of(2, 101),
+			pageable.getAllValues().stream().map(Pageable::getPageSize).toList());
 	}
 
 	@Test

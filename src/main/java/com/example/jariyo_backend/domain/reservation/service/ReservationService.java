@@ -5,12 +5,15 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.example.jariyo_backend.common.api.ApiResponse;
 import com.example.jariyo_backend.common.async.AsyncEventRecorder;
 import com.example.jariyo_backend.common.async.AsyncEventType;
 import com.example.jariyo_backend.common.error.BusinessException;
@@ -35,6 +38,7 @@ import com.example.jariyo_backend.domain.user.entity.StoreMember;
 import com.example.jariyo_backend.domain.user.repository.CustomerProfileRepository;
 import com.example.jariyo_backend.domain.user.repository.StoreMemberRepository;
 import com.example.jariyo_backend.domain.waitlist.service.WaitlistService;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -131,22 +135,31 @@ public class ReservationService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<ReservationSummary> listMine(UUID userId, ReservationStatus status, LocalDate from, LocalDate to) {
+	public ReservationListResult listMine(UUID userId, ReservationStatus status, LocalDate from, LocalDate to,
+		String cursor, Integer limit) {
 		CustomerProfile customer = requireCustomer(userId);
 		if (from != null && to != null && from.isAfter(to)) {
 			throw new BusinessException(ErrorCode.BAD_REQUEST);
 		}
-		List<Reservation> reservations =
-			reservationRepository.findAllByCustomerIdOrderByStartAtDescIdDesc(customer.getId());
+		int max = limit == null ? 20 : Math.max(1, Math.min(limit, 100));
+		ReservationCursor position = ReservationCursor.decode(cursor);
+		List<Reservation> queried = reservationRepository.findPageByCustomerId(customer.getId(),
+			status == null ? null : status.name(), from, to, position == null ? null : position.startAt(),
+			position == null ? null : position.id(), PageRequest.of(0, max + 1));
+		boolean hasNext = queried.size() > max;
+		List<Reservation> reservations = hasNext ? queried.subList(0, max) : queried;
 		Map<UUID, Store> stores = stores(reservations);
 		Map<UUID, StoreServiceDefinition> services = services(reservations);
 		Map<UUID, StoreMember> staff = staff(reservations);
-		return reservations.stream()
-			.filter(reservation -> status == null || reservation.getStatus() == status)
-			.filter(reservation -> inDateRange(reservation, stores.get(reservation.getStoreId()), from, to))
+		List<ReservationSummary> items = reservations.stream()
 			.map(reservation -> summary(reservation, stores.get(reservation.getStoreId()),
 				services.get(reservation.getServiceId()), staff.get(reservation.getAssignedStaffId())))
 			.toList();
+		String nextCursor = hasNext
+			? new ReservationCursor(reservations.get(reservations.size() - 1).getStartAt(),
+				reservations.get(reservations.size() - 1).getId()).encode()
+			: null;
+		return new ReservationListResult(items, new ApiResponse.PageBody(nextCursor, hasNext));
 	}
 
 	@Transactional(readOnly = true)
@@ -256,11 +269,6 @@ public class ReservationService {
 		return reservation.getStartAt().minusSeconds(policy.getCancellationDeadlineMinutes() * 60L);
 	}
 
-	private boolean inDateRange(Reservation reservation, Store store, LocalDate from, LocalDate to) {
-		LocalDate date = reservation.getStartAt().atZone(ZoneId.of(store.getTimezone())).toLocalDate();
-		return (from == null || !date.isBefore(from)) && (to == null || !date.isAfter(to));
-	}
-
 	private Reservation requireOwnedReservation(UUID customerId, UUID reservationId) {
 		Reservation reservation = reservationRepository.findById(reservationId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND));
@@ -350,6 +358,8 @@ public class ReservationService {
 	public record ReservationSummary(UUID id, NamedRef store, NamedRef service, NamedRef staff,
 		ReservationStatus status, OffsetDateTime startAt, OffsetDateTime serviceEndAt) { }
 
+	public record ReservationListResult(List<ReservationSummary> items, ApiResponse.PageBody page) { }
+
 	public record ReservationDetail(UUID id, StoreRef store, NamedRef service, NamedRef staff,
 		ReservationSource source, ReservationStatus status, OffsetDateTime startAt, OffsetDateTime serviceEndAt,
 		OffsetDateTime occupiedUntil, int partySize, String customerNote, boolean checkInAvailable, boolean canCancel,
@@ -370,4 +380,29 @@ public class ReservationService {
 
 	private record ReservationConfirmedPayload(UUID reservationId, UUID storeId, UUID customerId,
 		Instant confirmedAt) { }
+
+	private record ReservationCursor(Instant startAt, UUID id) {
+		private String encode() {
+			String value = startAt + "|" + id;
+			return Base64.getUrlEncoder().withoutPadding()
+				.encodeToString(value.getBytes(StandardCharsets.UTF_8));
+		}
+
+		private static ReservationCursor decode(String cursor) {
+			if (cursor == null || cursor.isBlank()) {
+				return null;
+			}
+			try {
+				String value = new String(Base64.getUrlDecoder().decode(cursor.trim()), StandardCharsets.UTF_8);
+				String[] parts = value.split("\\|", -1);
+				if (parts.length != 2) {
+					throw new IllegalArgumentException();
+				}
+				return new ReservationCursor(Instant.parse(parts[0]), UUID.fromString(parts[1]));
+			}
+			catch (IllegalArgumentException exception) {
+				throw new BusinessException(ErrorCode.BAD_REQUEST, "cursor 형식이 올바르지 않습니다.");
+			}
+		}
+	}
 }
