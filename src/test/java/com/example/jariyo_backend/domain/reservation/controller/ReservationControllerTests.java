@@ -1,6 +1,7 @@
 package com.example.jariyo_backend.domain.reservation.controller;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 import com.example.jariyo_backend.common.api.ApiResponse;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationSource;
@@ -14,6 +15,7 @@ import com.example.jariyo_backend.domain.reservation.service.ReservationService.
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.NamedRef;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationCreateResult;
 import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationHoldResult;
+import com.example.jariyo_backend.domain.reservation.service.ReservationService.ReservationListResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -119,5 +121,22 @@ class ReservationControllerTests {
 		assertEquals(200, response.getStatusCode().value());
 		assertEquals(ReservationStatus.CONFIRMED, response.getBody().data().status());
 		verify(reservationService).confirm(userId, reservationId, "confirm-key");
+	}
+
+	@Test
+	void listMineWrapsItemsWithPage() {
+		ReservationController controller = new ReservationController(reservationService);
+		UUID userId = UUID.randomUUID();
+		ReservationListResult result =
+			new ReservationListResult(List.of(), new ApiResponse.PageBody("next-cursor", true));
+		when(jwt.getSubject()).thenReturn(userId.toString());
+		when(reservationService.listMine(userId, ReservationStatus.CONFIRMED, null, null, "cursor", 10))
+			.thenReturn(result);
+
+		var response = controller.listMine(jwt, ReservationStatus.CONFIRMED, null, null, "cursor", 10);
+
+		assertEquals("next-cursor", response.getBody().page().cursor());
+		assertEquals(true, response.getBody().page().hasNext());
+		verify(reservationService).listMine(userId, ReservationStatus.CONFIRMED, null, null, "cursor", 10);
 	}
 }
