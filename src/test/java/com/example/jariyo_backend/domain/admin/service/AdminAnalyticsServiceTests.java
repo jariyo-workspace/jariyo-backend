@@ -134,8 +134,8 @@ class AdminAnalyticsServiceTests {
 			Instant.parse("2026-07-25T01:00:00Z"));
 		Reservation noShow = reservation(storeId, ReservationStatus.NO_SHOW, staffId,
 			Instant.parse("2026-07-25T03:00:00Z"));
-		ServiceSession session = new ServiceSession(storeId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-			staffId, Instant.parse("2026-07-25T04:00:00Z"));
+		ServiceSession session = ServiceSession.forWalkIn(storeId, UUID.randomUUID(), UUID.randomUUID(),
+			UUID.randomUUID(), staffId, Instant.parse("2026-07-25T04:00:00Z"));
 		session.complete(Instant.parse("2026-07-25T04:45:00Z"), "완료");
 		when(storeRepository.findById(storeId)).thenReturn(Optional.of(store));
 		when(reservationRepository.findAllByStoreIdAndStartAtBetween(storeId,
@@ -168,10 +168,10 @@ class AdminAnalyticsServiceTests {
 		UUID storeId = UUID.randomUUID();
 		UUID serviceId = UUID.randomUUID();
 		Store store = new Store(storeId, "자리요", null, "0212345678", "서울", "Asia/Seoul", StoreStatus.ACTIVE);
-		ServiceSession first = new ServiceSession(storeId, UUID.randomUUID(), UUID.randomUUID(), serviceId,
+		ServiceSession first = ServiceSession.forWalkIn(storeId, UUID.randomUUID(), UUID.randomUUID(), serviceId,
 			UUID.randomUUID(), Instant.parse("2026-07-25T04:00:00Z"));
 		first.complete(Instant.parse("2026-07-25T04:20:00Z"), "완료");
-		ServiceSession second = new ServiceSession(storeId, UUID.randomUUID(), UUID.randomUUID(), serviceId,
+		ServiceSession second = ServiceSession.forWalkIn(storeId, UUID.randomUUID(), UUID.randomUUID(), serviceId,
 			UUID.randomUUID(), Instant.parse("2026-07-25T05:00:00Z"));
 		second.complete(Instant.parse("2026-07-25T05:40:00Z"), "완료");
 		com.example.jariyo_backend.domain.store.entity.ServiceOffering serviceOffering =

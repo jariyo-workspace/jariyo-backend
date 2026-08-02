@@ -73,6 +73,12 @@ public class Reservation {
 	@Column(name = "confirmed_at")
 	private Instant confirmedAt;
 
+	@Column(name = "checked_in_at")
+	private Instant checkedInAt;
+
+	@Column(name = "service_started_at")
+	private Instant serviceStartedAt;
+
 	@Column(name = "cancelled_at")
 	private Instant cancelledAt;
 
@@ -165,6 +171,26 @@ public class Reservation {
 		this.status = ReservationStatus.EXPIRED;
 	}
 
+	public void checkIn(Instant checkedInAt) {
+		this.status = ReservationStatus.CHECKED_IN;
+		this.checkedInAt = checkedInAt;
+	}
+
+	public void markNoShow(Instant at) {
+		this.status = ReservationStatus.NO_SHOW;
+		this.completedAt = at;
+	}
+
+	public void startService(Instant startedAt) {
+		this.status = ReservationStatus.IN_SERVICE;
+		this.serviceStartedAt = startedAt;
+	}
+
+	public void completeService(Instant completedAt) {
+		this.status = ReservationStatus.COMPLETED;
+		this.completedAt = completedAt;
+	}
+
 	public UUID getId() {
 		return id;
 	}
@@ -229,6 +255,14 @@ public class Reservation {
 		return confirmedAt;
 	}
 
+	public Instant getCheckedInAt() {
+		return checkedInAt;
+	}
+
+	public Instant getServiceStartedAt() {
+		return serviceStartedAt;
+	}
+
 	public Instant getHoldExpiresAt() {
 		return holdExpiresAt;
 	}
@@ -239,5 +273,9 @@ public class Reservation {
 
 	public Instant getCreatedAt() {
 		return createdAt;
+	}
+
+	public Instant getCompletedAt() {
+		return completedAt;
 	}
 }

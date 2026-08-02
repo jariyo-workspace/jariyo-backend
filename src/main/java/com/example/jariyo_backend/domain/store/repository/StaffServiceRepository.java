@@ -15,4 +15,6 @@ public interface StaffServiceRepository extends JpaRepository<StaffService, UUID
 	List<StaffService> findAllByServiceIdInAndActiveTrue(Collection<UUID> serviceIds);
 
 	Optional<StaffService> findByStoreMemberIdAndServiceId(UUID storeMemberId, UUID serviceId);
+
+	boolean existsByStoreMemberIdAndServiceIdAndActiveTrue(UUID storeMemberId, UUID serviceId);
 }

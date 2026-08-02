@@ -335,29 +335,10 @@ public class WalkInService {
 				Instant now = Instant.now();
 				WalkInStatus previous = entry.getStatus();
 				entry.transitionTo(WalkInStatus.IN_SERVICE, now);
-				ServiceSession session = serviceSessionRepository.save(new ServiceSession(storeId, entry.getCustomerId(),
+				ServiceSession session = serviceSessionRepository.save(ServiceSession.forWalkIn(storeId, entry.getCustomerId(),
 					walkInId, entry.getServiceId(), command.staffId(), now));
 				history(entry, previous, WalkInStatus.IN_SERVICE, WalkInActorType.STORE_MEMBER, actor.getId(), "서비스 시작");
 				return StartServiceResult.from(session);
-			});
-	}
-
-	@Transactional
-	public CompleteServiceResult completeService(UUID userId, UUID storeId, UUID sessionId, String key,
-		CompleteServiceCommand command) {
-		return idempotencyService.execute(userId, "walk-in:complete-service:" + sessionId, key, command,
-			CompleteServiceResult.class, () -> {
-				StoreMember actor = requireStaff(userId, storeId);
-				ServiceSession session = serviceSessionRepository.findByIdForUpdate(sessionId)
-					.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_SESSION_NOT_FOUND));
-				if (!storeId.equals(session.getStoreId())) throw new BusinessException(ErrorCode.SERVICE_SESSION_NOT_FOUND);
-				WalkInEntry entry = requireStoreEntryForUpdate(storeId, session.getWalkInEntryId());
-				Instant now = Instant.now();
-				session.complete(now, command.completionNote());
-				WalkInStatus previous = entry.getStatus();
-				entry.transitionTo(WalkInStatus.COMPLETED, now);
-				history(entry, previous, WalkInStatus.COMPLETED, WalkInActorType.STORE_MEMBER, actor.getId(), "서비스 완료");
-				return CompleteServiceResult.from(session);
 			});
 	}
 
@@ -564,7 +545,6 @@ public class WalkInService {
 	public record CallCommand(Integer responseTimeoutMinutes) { }
 	public record CallResponseCommand(CallResponse response) { }
 	public record StartServiceCommand(UUID staffId) { }
-	public record CompleteServiceCommand(String completionNote) { }
 	public record EmptyCommand() { }
 	public enum CallResponse { ENTERING, DELAYED, CANCEL }
 	public record WalkInAvailability(UUID storeId, boolean walkInEnabled, boolean acceptingEntries, long waitingCount,
@@ -581,13 +561,6 @@ public class WalkInService {
 		static StartServiceResult from(ServiceSession session) {
 			return new StartServiceResult(session.getId(), session.getWalkInEntryId(), session.getStatus(),
 				session.getActualStartAt());
-		}
-	}
-	public record CompleteServiceResult(UUID id, ServiceSessionStatus status, Instant actualStartAt,
-		Instant actualEndAt, long actualDurationMinutes) {
-		static CompleteServiceResult from(ServiceSession session) {
-			return new CompleteServiceResult(session.getId(), session.getStatus(), session.getActualStartAt(),
-				session.getActualEndAt(), session.getActualDurationMinutes());
 		}
 	}
 
