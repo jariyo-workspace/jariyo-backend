@@ -43,6 +43,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyIterable;
 import static org.mockito.ArgumentMatchers.eq;
@@ -146,6 +147,81 @@ class AdminOperationQueryServiceTests {
 	}
 
 	@Test
+	void getReservationReturnsOperationalDetail() {
+		UUID userId = UUID.randomUUID();
+		UUID storeId = UUID.randomUUID();
+		UUID reservationId = UUID.randomUUID();
+		UUID customerId = UUID.randomUUID();
+		UUID serviceId = UUID.randomUUID();
+		UUID staffId = UUID.randomUUID();
+		Reservation reservation = new Reservation(reservationId, storeId, customerId, serviceId, staffId,
+			ReservationSource.CUSTOMER_BOOKING, ReservationStatus.CONFIRMED, Instant.parse("2026-07-24T01:00:00Z"),
+			Instant.parse("2026-07-24T01:30:00Z"), Instant.parse("2026-07-24T01:40:00Z"), 1);
+		UserAccount user = new UserAccount("user@example.com", "+821012345678", "hash");
+		CustomerProfile profile = new CustomerProfile(user, "고객", true, true);
+		setField(profile, "id", customerId);
+		ServiceOffering offering = serviceOffering(serviceId, storeId, "커트");
+		when(reservationRepository.findById(reservationId)).thenReturn(Optional.of(reservation));
+		when(customerProfileRepository.findAllById(anyIterable())).thenReturn(List.of(profile));
+		when(serviceRepository.findAllById(anyIterable())).thenReturn(List.of(offering));
+		when(storeMemberRepository.findAllById(anyIterable())).thenReturn(List.of(
+			new StoreMember(staffId, storeId, user, StoreMemberRole.STAFF, "민수", true)));
+
+		AdminOperationQueryService.AdminReservationDetail result = service(Clock.systemUTC())
+			.getReservation(userId, storeId, reservationId);
+
+		verify(storeAuthorizationService).requireRole(userId, storeId, StoreMemberRole.STAFF);
+		assertEquals(reservationId, result.id());
+		assertEquals("고객", result.customerName());
+		assertEquals("커트", result.serviceName());
+		assertEquals("민수", result.assignedStaffName());
+		assertEquals("NOT_CHECKED_IN", result.checkInStatus());
+	}
+
+	@Test
+	void getWaitlistReturnsPendingOfferDetail() {
+		UUID userId = UUID.randomUUID();
+		UUID storeId = UUID.randomUUID();
+		UUID waitlistId = UUID.randomUUID();
+		UUID customerId = UUID.randomUUID();
+		UUID serviceId = UUID.randomUUID();
+		UUID staffId = UUID.randomUUID();
+		UserAccount user = new UserAccount("user@example.com", "+821012345678", "hash");
+		CustomerProfile profile = new CustomerProfile(user, "고객", true, true);
+		setField(profile, "id", customerId);
+		WaitlistEntry entry = new WaitlistEntry(storeId, customerId, serviceId, staffId, StaffPreferenceType.SPECIFIC_ONLY,
+			LocalDate.of(2026, 7, 24), LocalTime.of(14, 0), LocalTime.of(16, 0), 1, 3, Instant.parse("2026-07-24T09:00:00Z"));
+		setField(entry, "id", waitlistId);
+		ServiceOffering offering = serviceOffering(serviceId, storeId, "펌");
+		SlotOffer offer = new SlotOffer(waitlistId, storeId, serviceId, staffId, Instant.parse("2026-07-24T05:00:00Z"),
+			Instant.parse("2026-07-24T05:30:00Z"), Instant.parse("2026-07-24T05:40:00Z"), UUID.randomUUID(),
+			Instant.parse("2026-07-24T06:00:00Z"));
+		setField(offer, "id", UUID.randomUUID());
+		Clock clock = Clock.fixed(Instant.parse("2026-07-24T05:10:00Z"), ZoneOffset.UTC);
+		when(waitlistEntryRepository.findById(waitlistId)).thenReturn(Optional.of(entry));
+		when(customerProfileRepository.findAllById(anyIterable())).thenReturn(List.of(profile));
+		when(serviceRepository.findAllById(anyIterable())).thenReturn(List.of(offering));
+		when(storeMemberRepository.findAllById(anyIterable())).thenReturn(List.of(
+			new StoreMember(staffId, storeId, user, StoreMemberRole.STAFF, "수진", true)));
+		when(slotOfferRepository.findFirstByWaitlistEntryIdAndStatusOrderByCreatedAtDesc(waitlistId,
+			com.example.jariyo_backend.domain.waitlist.entity.SlotOfferStatus.PENDING)).thenReturn(Optional.of(offer));
+
+		AdminOperationQueryService.AdminWaitlistDetail result = service(clock).getWaitlist(userId, storeId, waitlistId);
+
+		verify(storeAuthorizationService).requireRole(userId, storeId, StoreMemberRole.STAFF);
+		assertEquals(waitlistId, result.id());
+		assertEquals("수진", result.preferredStaffName());
+		assertEquals(StaffPreferenceType.SPECIFIC_ONLY, result.staffPreferenceType());
+		assertEquals("펌", result.serviceName());
+		assertEquals("고객", result.customerName());
+		assertEquals(WaitlistStatus.WAITING, result.status());
+		assertEquals(LocalTime.of(14, 0), result.acceptableStartTime());
+		assertEquals(LocalTime.of(16, 0), result.acceptableEndTime());
+		assertEquals(false, result.pendingOffer() == null);
+		assertEquals(offer.getId(), result.pendingOffer().id());
+	}
+
+	@Test
 	void listAuditLogsReturnsFilteredPageWithDisplayNames() {
 		UUID userId = UUID.randomUUID();
 		UUID storeId = UUID.randomUUID();
@@ -175,14 +251,36 @@ class AdminOperationQueryServiceTests {
 		setField(profile, "id", customerId);
 		when(customerProfileRepository.findAllById(anyIterable())).thenReturn(List.of(profile));
 
-		List<AdminOperationQueryService.AuditLogItem> result = service.listAuditLogs(userId, storeId, null, null, null,
+		AdminOperationQueryService.AuditLogListResult result = service.listAuditLogs(userId, storeId, null, null, null,
 			null, null, null, null, 2);
 
 		verify(storeAuthorizationService).requireManager(userId, storeId);
-		assertEquals(2, result.size());
-		assertEquals("민지", result.get(0).actor().displayName());
-		assertEquals("고객", result.get(1).actor().displayName());
-		assertEquals("고객 요청", result.get(0).reason());
+		assertEquals(2, result.items().size());
+		assertEquals("민지", result.items().get(0).actor().displayName());
+		assertEquals("고객", result.items().get(1).actor().displayName());
+		assertEquals("고객 요청", result.items().get(0).reason());
+		assertEquals(older.getId().toString(), result.page().cursor());
+		assertEquals(true, result.page().hasNext());
+	}
+
+	@Test
+	void listAuditLogsReturnsNullCursorWhenNoNextPage() {
+		UUID userId = UUID.randomUUID();
+		UUID storeId = UUID.randomUUID();
+		AdminOperationQueryService service = service(Clock.systemUTC());
+		AuditLog log = new AuditLog(storeId, AuditActorType.SYSTEM, null, "FAILED_JOB_RETRIED",
+			"FAILED_ASYNC_JOB", UUID.randomUUID(), "자동 재시도", null, null, "req",
+			Instant.parse("2026-07-24T08:00:00Z"));
+		setField(log, "id", UUID.randomUUID());
+		when(auditLogRepository.findAllByStoreIdAndFilters(storeId, null, null, null, null, null, null))
+			.thenReturn(List.of(log));
+
+		AdminOperationQueryService.AuditLogListResult result = service.listAuditLogs(userId, storeId, null, null, null,
+			null, null, null, null, 20);
+
+		assertEquals(1, result.items().size());
+		assertNull(result.page().cursor());
+		assertEquals(false, result.page().hasNext());
 	}
 
 	private AdminOperationQueryService service(Clock clock) {

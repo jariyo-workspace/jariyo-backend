@@ -5,9 +5,13 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import com.example.jariyo_backend.common.api.ApiResponse;
+import com.example.jariyo_backend.common.api.ResponseSupport;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AuditLogItem;
+import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AuditLogListResult;
+import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AdminReservationDetail;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AdminReservationItem;
+import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AdminWaitlistDetail;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AdminWaitlistItem;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.TodayDashboard;
 import jakarta.validation.constraints.Max;
@@ -51,6 +55,12 @@ public class AdminOperationController {
 			customerQuery));
 	}
 
+	@GetMapping("/reservations/{reservationId}")
+	public ResponseEntity<ApiResponse<AdminReservationDetail>> getReservation(@AuthenticationPrincipal Jwt jwt,
+		@PathVariable UUID storeId, @PathVariable UUID reservationId) {
+		return ok(adminOperationQueryService.getReservation(userId(jwt), storeId, reservationId));
+	}
+
 	@GetMapping("/waitlists")
 	public ResponseEntity<ApiResponse<List<AdminWaitlistItem>>> listWaitlists(@AuthenticationPrincipal Jwt jwt,
 		@PathVariable UUID storeId,
@@ -58,6 +68,12 @@ public class AdminOperationController {
 		@RequestParam(required = false) UUID serviceId, @RequestParam(required = false) UUID staffId,
 		@RequestParam(required = false) WaitlistStatus status) {
 		return ok(adminOperationQueryService.listWaitlists(userId(jwt), storeId, date, serviceId, staffId, status));
+	}
+
+	@GetMapping("/waitlists/{waitlistId}")
+	public ResponseEntity<ApiResponse<AdminWaitlistDetail>> getWaitlist(@AuthenticationPrincipal Jwt jwt,
+		@PathVariable UUID storeId, @PathVariable UUID waitlistId) {
+		return ok(adminOperationQueryService.getWaitlist(userId(jwt), storeId, waitlistId));
 	}
 
 	@GetMapping("/audit-logs")
@@ -69,8 +85,9 @@ public class AdminOperationController {
 		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
 		@RequestParam(required = false) String cursor,
 		@RequestParam(required = false) @Min(1) @Max(100) Integer limit) {
-		return ok(adminOperationQueryService.listAuditLogs(userId(jwt), storeId, actorId, action, targetType, targetId,
-			from, to, cursor, limit));
+		AuditLogListResult result = adminOperationQueryService.listAuditLogs(userId(jwt), storeId, actorId, action,
+			targetType, targetId, from, to, cursor, limit);
+		return ResponseSupport.ok(result.items(), result.page());
 	}
 
 	private UUID userId(Jwt jwt) {
