@@ -12,15 +12,13 @@ import com.example.jariyo_backend.domain.walkin.service.WalkInService.AdminWalkI
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.CallCommand;
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.CallResponse;
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.CallResponseCommand;
-import com.example.jariyo_backend.domain.walkin.service.WalkInService.CompleteServiceCommand;
-import com.example.jariyo_backend.domain.walkin.service.WalkInService.ReasonCommand;
-import com.example.jariyo_backend.domain.walkin.service.WalkInService.RegisterCustomerCommand;
-import com.example.jariyo_backend.domain.walkin.service.WalkInService.RegisterGuestCommand;
-import com.example.jariyo_backend.domain.walkin.service.WalkInService.CompleteServiceResult;
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.StartServiceResult;
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.StartServiceCommand;
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.WalkInAvailability;
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.WalkInDetail;
+import com.example.jariyo_backend.domain.walkin.service.WalkInService.ReasonCommand;
+import com.example.jariyo_backend.domain.walkin.service.WalkInService.RegisterCustomerCommand;
+import com.example.jariyo_backend.domain.walkin.service.WalkInService.RegisterGuestCommand;
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.WalkInSummary;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -166,14 +164,6 @@ public class WalkInController {
 			new StartServiceCommand(request.staffId())));
 	}
 
-	@PostMapping("/admin/stores/{storeId}/service-sessions/{sessionId}/complete")
-	public ResponseEntity<ApiResponse<CompleteServiceResult>> completeService(@AuthenticationPrincipal Jwt jwt,
-		@PathVariable UUID storeId, @PathVariable UUID sessionId,
-		@RequestHeader(IdempotencyKey.HEADER_NAME) String key, @Valid @RequestBody CompleteServiceRequest request) {
-		return ok(walkInService.completeService(userId(jwt), storeId, sessionId, key,
-			new CompleteServiceCommand(request.completionNote())));
-	}
-
 	private UUID userId(Jwt jwt) {
 		return AuthenticatedUser.from(jwt).id();
 	}
@@ -192,5 +182,4 @@ public class WalkInController {
 	public record RespondCallRequest(@NotNull CallResponse response) { }
 	public record CallRequest(@Min(1) @Max(60) Integer responseTimeoutMinutes) { }
 	public record StartServiceRequest(@NotNull UUID staffId) { }
-	public record CompleteServiceRequest(@NotBlank @Size(max = 1000) String completionNote) { }
 }

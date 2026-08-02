@@ -15,6 +15,8 @@ import org.springframework.data.repository.query.Param;
 public interface ServiceSessionRepository extends JpaRepository<ServiceSession, UUID> {
 	Optional<ServiceSession> findByWalkInEntryIdAndStatus(UUID walkInEntryId, ServiceSessionStatus status);
 
+	Optional<ServiceSession> findByReservationIdAndStatus(UUID reservationId, ServiceSessionStatus status);
+
 	List<ServiceSession> findAllByStoreIdAndActualStartAtBetween(UUID storeId, Instant from, Instant to);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)

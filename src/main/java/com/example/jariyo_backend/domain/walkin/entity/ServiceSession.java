@@ -21,7 +21,8 @@ public class ServiceSession {
 	@Id @UuidGenerator(style = UuidGenerator.Style.VERSION_7) private UUID id;
 	@Column(name = "store_id", nullable = false) private UUID storeId;
 	@Column(name = "customer_id") private UUID customerId;
-	@Column(name = "walk_in_entry_id", nullable = false) private UUID walkInEntryId;
+	@Column(name = "walk_in_entry_id") private UUID walkInEntryId;
+	@Column(name = "reservation_id") private UUID reservationId;
 	@Column(name = "service_id", nullable = false) private UUID serviceId;
 	@Column(name = "staff_id", nullable = false) private UUID staffId;
 	@Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private ServiceSessionStatus status;
@@ -33,15 +34,26 @@ public class ServiceSession {
 
 	protected ServiceSession() { }
 
-	public ServiceSession(UUID storeId, UUID customerId, UUID walkInEntryId, UUID serviceId, UUID staffId,
-		Instant actualStartAt) {
+	private ServiceSession(UUID storeId, UUID customerId, UUID walkInEntryId, UUID reservationId, UUID serviceId,
+		UUID staffId, Instant actualStartAt) {
 		this.storeId = storeId;
 		this.customerId = customerId;
 		this.walkInEntryId = walkInEntryId;
+		this.reservationId = reservationId;
 		this.serviceId = serviceId;
 		this.staffId = staffId;
 		this.status = ServiceSessionStatus.IN_PROGRESS;
 		this.actualStartAt = actualStartAt;
+	}
+
+	public static ServiceSession forWalkIn(UUID storeId, UUID customerId, UUID walkInEntryId, UUID serviceId,
+		UUID staffId, Instant actualStartAt) {
+		return new ServiceSession(storeId, customerId, walkInEntryId, null, serviceId, staffId, actualStartAt);
+	}
+
+	public static ServiceSession forReservation(UUID storeId, UUID customerId, UUID reservationId, UUID serviceId,
+		UUID staffId, Instant actualStartAt) {
+		return new ServiceSession(storeId, customerId, null, reservationId, serviceId, staffId, actualStartAt);
 	}
 
 	public void complete(Instant at, String note) {
@@ -55,6 +67,7 @@ public class ServiceSession {
 	public UUID getStoreId() { return storeId; }
 	public UUID getCustomerId() { return customerId; }
 	public UUID getWalkInEntryId() { return walkInEntryId; }
+	public UUID getReservationId() { return reservationId; }
 	public UUID getServiceId() { return serviceId; }
 	public UUID getStaffId() { return staffId; }
 	public ServiceSessionStatus getStatus() { return status; }
