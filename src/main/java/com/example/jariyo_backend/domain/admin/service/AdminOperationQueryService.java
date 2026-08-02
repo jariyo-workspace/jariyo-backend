@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.example.jariyo_backend.common.api.ApiResponse;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.domain.admin.entity.AuditActorType;
@@ -137,7 +138,7 @@ public class AdminOperationQueryService {
 		Instant rangeStart = targetFrom.atStartOfDay(ZoneId.of(store.getTimezone())).toInstant();
 		Instant rangeEnd = targetTo.plusDays(1).atStartOfDay(ZoneId.of(store.getTimezone())).toInstant();
 		List<Reservation> reservations = reservationRepository.findDailyReservations(storeId, rangeStart, rangeEnd);
-		Map<UUID, String> customerNames = customerNamesByUserId(reservations.stream()
+		Map<UUID, String> customerNames = customerNamesByProfileId(reservations.stream()
 			.map(Reservation::getCustomerId)
 			.collect(Collectors.toSet()));
 		Map<UUID, String> serviceNames = serviceNames(reservations.stream()
@@ -155,6 +156,27 @@ public class AdminOperationQueryService {
 			.map(reservation -> toReservationItem(reservation, customerNames, serviceNames, staffNames))
 			.filter(item -> normalizedCustomerQuery == null || item.customerName().toLowerCase().contains(normalizedCustomerQuery))
 			.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public AdminReservationDetail getReservation(UUID userId, UUID storeId, UUID reservationId) {
+		storeAuthorizationService.requireRole(userId, storeId, StoreMemberRole.STAFF);
+		Reservation reservation = reservationRepository.findById(reservationId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND));
+		if (!storeId.equals(reservation.getStoreId())) {
+			throw new BusinessException(ErrorCode.RESERVATION_NOT_FOUND);
+		}
+		String customerName = customerNamesByProfileId(Set.of(reservation.getCustomerId()))
+			.getOrDefault(reservation.getCustomerId(), "-");
+		String serviceName = serviceNames(Set.of(reservation.getServiceId()))
+			.getOrDefault(reservation.getServiceId(), "-");
+		String staffName = reservation.getAssignedStaffId() == null ? null
+			: storeMemberNames(Set.of(reservation.getAssignedStaffId())).get(reservation.getAssignedStaffId());
+		return new AdminReservationDetail(reservation.getId(), customerName, serviceName, staffName,
+			reservation.getStartAt(), reservation.getServiceEndAt(), reservation.getStatus(),
+			toCheckInStatus(reservation.getStatus()), reservation.getPartySize(), reservation.getCustomerNote(),
+			reservation.getCancellationReason(), reservation.getCancelledAt(), reservation.getCheckedInAt(),
+			reservation.getServiceStartedAt(), reservation.getCompletedAt());
 	}
 
 	@Transactional(readOnly = true)
@@ -192,7 +214,31 @@ public class AdminOperationQueryService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<AuditLogItem> listAuditLogs(UUID userId, UUID storeId, UUID actorId, String action, String targetType,
+	public AdminWaitlistDetail getWaitlist(UUID userId, UUID storeId, UUID waitlistId) {
+		storeAuthorizationService.requireRole(userId, storeId, StoreMemberRole.STAFF);
+		WaitlistEntry entry = waitlistEntryRepository.findById(waitlistId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.WAITLIST_NOT_FOUND));
+		if (!storeId.equals(entry.getStoreId())) {
+			throw new BusinessException(ErrorCode.WAITLIST_NOT_FOUND);
+		}
+		String customerName = customerNamesByProfileId(Set.of(entry.getCustomerId()))
+			.getOrDefault(entry.getCustomerId(), "-");
+		String serviceName = serviceNames(Set.of(entry.getServiceId()))
+			.getOrDefault(entry.getServiceId(), "-");
+		String staffName = entry.getPreferredStaffId() == null ? null
+			: storeMemberNames(Set.of(entry.getPreferredStaffId())).get(entry.getPreferredStaffId());
+		SlotOffer pendingOffer = slotOfferRepository.findFirstByWaitlistEntryIdAndStatusOrderByCreatedAtDesc(waitlistId,
+			SlotOfferStatus.PENDING).filter(offer -> !offer.getExpiresAt().isBefore(clock.instant())).orElse(null);
+		return new AdminWaitlistDetail(entry.getId(), customerName, serviceName, staffName,
+			entry.getStaffPreferenceType(), entry.getDesiredDate(), entry.getAcceptableStartTime(),
+			entry.getAcceptableEndTime(), entry.getPartySize(), entry.getStatus(), entry.getSequenceNumber(),
+			entry.getExpiresAt(), entry.getReservedAt(), entry.getCancelledAt(),
+			pendingOffer == null ? null : new PendingSlotOfferSummary(pendingOffer.getId(), pendingOffer.getStartAt(),
+				pendingOffer.getServiceEndAt(), pendingOffer.getExpiresAt()));
+	}
+
+	@Transactional(readOnly = true)
+	public AuditLogListResult listAuditLogs(UUID userId, UUID storeId, UUID actorId, String action, String targetType,
 		UUID targetId, Instant from, Instant to, String cursor, Integer limit) {
 		storeAuthorizationService.requireManager(userId, storeId);
 		int max = limit == null ? 20 : Math.max(1, Math.min(limit, 100));
@@ -203,6 +249,8 @@ public class AdminOperationQueryService {
 			.skip(startIndex)
 			.limit(max)
 			.toList();
+		boolean hasNext = startIndex + page.size() < logs.size();
+		String nextCursor = hasNext && !page.isEmpty() ? page.get(page.size() - 1).getId().toString() : null;
 		Map<UUID, String> customerNames = customerNamesByProfileId(page.stream()
 			.filter(log -> log.getActorType() == AuditActorType.CUSTOMER && log.getActorId() != null)
 			.map(AuditLog::getActorId)
@@ -211,11 +259,12 @@ public class AdminOperationQueryService {
 			.filter(log -> log.getActorType() == AuditActorType.STORE_MEMBER && log.getActorId() != null)
 			.map(AuditLog::getActorId)
 			.collect(Collectors.toSet()));
-		return page.stream()
+		List<AuditLogItem> items = page.stream()
 			.map(log -> new AuditLogItem(log.getId(),
 				new AuditActor(log.getActorType(), log.getActorId(), resolveActorDisplayName(log, customerNames, memberNames)),
 				log.getAction(), log.getTargetType(), log.getTargetId(), log.getReason(), log.getOccurredAt()))
 			.toList();
+		return new AuditLogListResult(items, new ApiResponse.PageBody(nextCursor, hasNext));
 	}
 
 	private List<DashboardAlert> buildAlerts(ZoneId zoneId, List<Reservation> noShowCandidates, List<SlotOffer> pendingOffers) {
@@ -252,12 +301,6 @@ public class AdminOperationQueryService {
 			case CANCELLED -> "CANCELLED";
 			default -> "NOT_CHECKED_IN";
 		};
-	}
-
-	private Map<UUID, String> customerNamesByUserId(Set<UUID> userIds) {
-		if (userIds.isEmpty()) return Map.of();
-		return customerProfileRepository.findAllByUser_IdIn(userIds).stream()
-			.collect(Collectors.toMap(CustomerProfile::getUserId, CustomerProfile::getDisplayName));
 	}
 
 	private Map<UUID, String> customerNamesByProfileId(Set<UUID> profileIds) {
@@ -339,10 +382,21 @@ public class AdminOperationQueryService {
 	public record DashboardTimelineItem(String type, String referenceId, LocalDateTime scheduledAt, String label) { }
 	public record AdminReservationItem(UUID id, String customerName, String serviceName, String assignedStaffName,
 		Instant startAt, Instant serviceEndAt, ReservationStatus status, String checkInStatus, int partySize) { }
+	public record AdminReservationDetail(UUID id, String customerName, String serviceName, String assignedStaffName,
+		Instant startAt, Instant serviceEndAt, ReservationStatus status, String checkInStatus, int partySize,
+		String customerNote, String cancellationReason, Instant cancelledAt, Instant checkedInAt,
+		Instant serviceStartedAt, Instant completedAt) { }
 	public record AdminWaitlistItem(UUID id, String customerName, String serviceName, String preferredStaffName,
 		LocalDate desiredDate, LocalTime acceptableStartTime, LocalTime acceptableEndTime, WaitlistStatus status,
 		int sequenceNumber, boolean pendingOffer, Instant pendingOfferExpiresAt) { }
+	public record PendingSlotOfferSummary(UUID id, Instant startAt, Instant serviceEndAt, Instant expiresAt) { }
+	public record AdminWaitlistDetail(UUID id, String customerName, String serviceName, String preferredStaffName,
+		com.example.jariyo_backend.domain.waitlist.entity.StaffPreferenceType staffPreferenceType, LocalDate desiredDate,
+		LocalTime acceptableStartTime, LocalTime acceptableEndTime, int partySize, WaitlistStatus status,
+		int sequenceNumber, Instant expiresAt, Instant reservedAt, Instant cancelledAt,
+		PendingSlotOfferSummary pendingOffer) { }
 	public record AuditActor(AuditActorType type, UUID id, String displayName) { }
 	public record AuditLogItem(UUID id, AuditActor actor, String action, String targetType, UUID targetId, String reason,
 		Instant occurredAt) { }
+	public record AuditLogListResult(List<AuditLogItem> items, ApiResponse.PageBody page) { }
 }

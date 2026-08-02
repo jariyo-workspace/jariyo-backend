@@ -6,15 +6,20 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 import com.example.jariyo_backend.common.api.ApiResponse;
+import com.example.jariyo_backend.common.api.ApiResponse.PageBody;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AuditActor;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AuditLogItem;
+import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AuditLogListResult;
+import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AdminReservationDetail;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AdminReservationItem;
+import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AdminWaitlistDetail;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.AdminWaitlistItem;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.TodayDashboard;
 import com.example.jariyo_backend.domain.admin.service.AdminOperationQueryService.TodaySummary;
 import com.example.jariyo_backend.domain.admin.entity.AuditActorType;
 import com.example.jariyo_backend.domain.reservation.entity.ReservationStatus;
+import com.example.jariyo_backend.domain.waitlist.entity.StaffPreferenceType;
 import com.example.jariyo_backend.domain.waitlist.entity.WaitlistStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -65,6 +70,24 @@ class AdminOperationControllerTests {
 	}
 
 	@Test
+	void getReservationWrapsPayload() {
+		UUID userId = UUID.randomUUID();
+		UUID storeId = UUID.randomUUID();
+		UUID reservationId = UUID.randomUUID();
+		AdminReservationDetail payload = new AdminReservationDetail(reservationId, "고객", "커트", "민수",
+			Instant.parse("2026-07-24T01:00:00Z"), Instant.parse("2026-07-24T01:30:00Z"),
+			ReservationStatus.CONFIRMED, "NOT_CHECKED_IN", 1, null, null, null, null, null, null);
+		when(adminOperationQueryService.getReservation(userId, storeId, reservationId)).thenReturn(payload);
+		AdminOperationController controller = new AdminOperationController(adminOperationQueryService);
+
+		ResponseEntity<ApiResponse<AdminReservationDetail>> response =
+			controller.getReservation(jwt(userId), storeId, reservationId);
+
+		assertEquals(payload, response.getBody().data());
+		verify(adminOperationQueryService).getReservation(userId, storeId, reservationId);
+	}
+
+	@Test
 	void listWaitlistsWrapsPayload() {
 		UUID userId = UUID.randomUUID();
 		UUID storeId = UUID.randomUUID();
@@ -81,6 +104,24 @@ class AdminOperationControllerTests {
 	}
 
 	@Test
+	void getWaitlistWrapsPayload() {
+		UUID userId = UUID.randomUUID();
+		UUID storeId = UUID.randomUUID();
+		UUID waitlistId = UUID.randomUUID();
+		AdminWaitlistDetail payload = new AdminWaitlistDetail(waitlistId, "고객", "펌", "수진",
+			StaffPreferenceType.SPECIFIC_ONLY, LocalDate.of(2026, 7, 24), LocalTime.of(14, 0), LocalTime.of(16, 0),
+			1, WaitlistStatus.WAITING, 3, Instant.parse("2026-07-24T09:00:00Z"), null, null, null);
+		when(adminOperationQueryService.getWaitlist(userId, storeId, waitlistId)).thenReturn(payload);
+		AdminOperationController controller = new AdminOperationController(adminOperationQueryService);
+
+		ResponseEntity<ApiResponse<AdminWaitlistDetail>> response =
+			controller.getWaitlist(jwt(userId), storeId, waitlistId);
+
+		assertEquals(payload, response.getBody().data());
+		verify(adminOperationQueryService).getWaitlist(userId, storeId, waitlistId);
+	}
+
+	@Test
 	void listAuditLogsWrapsPayload() {
 		UUID userId = UUID.randomUUID();
 		UUID storeId = UUID.randomUUID();
@@ -88,13 +129,15 @@ class AdminOperationControllerTests {
 			new AuditActor(AuditActorType.STORE_MEMBER, UUID.randomUUID(), "민지"), "WALK_IN_REORDERED",
 			"WALK_IN_ENTRY", UUID.randomUUID(), "고객 요청", Instant.parse("2026-07-24T10:00:00Z")));
 		when(adminOperationQueryService.listAuditLogs(userId, storeId, null, null, null, null, null, null, null, null))
-			.thenReturn(payload);
+			.thenReturn(new AuditLogListResult(payload, new PageBody("next-cursor", true)));
 		AdminOperationController controller = new AdminOperationController(adminOperationQueryService);
 
 		ResponseEntity<ApiResponse<List<AuditLogItem>>> response = controller.listAuditLogs(jwt(userId), storeId, null,
 			null, null, null, null, null, null, null);
 
 		assertEquals(payload, response.getBody().data());
+		assertEquals("next-cursor", response.getBody().page().cursor());
+		assertEquals(true, response.getBody().page().hasNext());
 		verify(adminOperationQueryService).listAuditLogs(userId, storeId, null, null, null, null, null, null, null, null);
 	}
 
