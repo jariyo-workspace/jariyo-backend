@@ -446,12 +446,17 @@ public class WaitlistService {
 			: storeMemberRepository.findById(entry.getPreferredStaffId()).orElse(null);
 		SlotOffer offer = slotOfferRepository.findFirstByWaitlistEntryIdAndStatusOrderByCreatedAtDesc(entry.getId(),
 			SlotOfferStatus.PENDING).orElse(null);
+		UUID resultingReservationId = entry.getStatus() == WaitlistStatus.RESERVED
+			? slotOfferRepository.findFirstByWaitlistEntryIdAndStatusOrderByCreatedAtDesc(entry.getId(),
+				SlotOfferStatus.ACCEPTED).map(SlotOffer::getResultingReservationId).orElse(null)
+			: null;
 		return new WaitlistDetail(entry.getId(), new NamedRef(store.getId(), store.getName()),
 			new NamedRef(service.getId(), service.getName()),
-			staff == null ? null : new NamedRef(staff.getId(), staff.getDisplayName()), entry.getStaffPreferenceType(),
+			staff == null ? null : new StaffRef(staff.getId(), staff.getDisplayName()), entry.getStaffPreferenceType(),
 			entry.getDesiredDate(), entry.getAcceptableStartTime(), entry.getAcceptableEndTime(), entry.getStatus(),
 			entry.getSequenceNumber(), offer == null ? null : new ActiveOffer(offer.getId(), offer.getStatus(),
-				offer.getStartAt(), offer.getExpiresAt()), entry.getCreatedAt());
+				offer.getStartAt(), offer.getExpiresAt()),
+			resultingReservationId, entry.getCreatedAt());
 	}
 
 	private SlotOfferSummary slotOfferSummary(SlotOffer offer) {
@@ -467,8 +472,9 @@ public class WaitlistService {
 		StoreMember staff = offer.getStaffId() == null ? null : storeMemberRepository.findById(offer.getStaffId()).orElse(null);
 		return new SlotOfferDetail(offer.getId(), entry.getId(), new NamedRef(store.getId(), store.getName()),
 			new NamedRef(service.getId(), service.getName()),
-			staff == null ? null : new NamedRef(staff.getId(), staff.getDisplayName()), offer.getStartAt(),
-			offer.getServiceEndAt(), offer.getStatus(), offer.getExpiresAt(), remainingSeconds(offer.getExpiresAt()));
+			staff == null ? null : new StaffRef(staff.getId(), staff.getDisplayName()), offer.getStartAt(),
+			offer.getServiceEndAt(), offer.getStatus(), offer.getExpiresAt(), remainingSeconds(offer.getExpiresAt()),
+			offer.getResultingReservationId());
 	}
 
 	private long remainingSeconds(Instant expiresAt) {
@@ -484,6 +490,7 @@ public class WaitlistService {
 	public record EmptyCommand() { }
 
 	public record NamedRef(UUID id, String name) { }
+	public record StaffRef(UUID id, String displayName) { }
 
 	public record WaitlistSummary(UUID id, UUID storeId, UUID serviceId, UUID preferredStaffId,
 		StaffPreferenceType staffPreferenceType, LocalDate desiredDate, LocalTime acceptableStartTime,
@@ -491,18 +498,19 @@ public class WaitlistService {
 
 	public record ActiveOffer(UUID id, SlotOfferStatus status, Instant startAt, Instant expiresAt) { }
 
-	public record WaitlistDetail(UUID id, NamedRef store, NamedRef service, NamedRef preferredStaff,
+	public record WaitlistDetail(UUID id, NamedRef store, NamedRef service, StaffRef preferredStaff,
 		StaffPreferenceType staffPreferenceType, LocalDate desiredDate, LocalTime acceptableStartTime,
 		LocalTime acceptableEndTime, WaitlistStatus status, int sequenceNumber, ActiveOffer activeOffer,
-		Instant createdAt) { }
+		UUID resultingReservationId, Instant createdAt) { }
 
 	public record WaitlistCancelResult(UUID id, WaitlistStatus status, Instant cancelledAt) { }
 
 	public record SlotOfferSummary(UUID id, UUID waitlistId, SlotOfferStatus status, Instant startAt,
 		Instant expiresAt, long remainingSeconds) { }
 
-	public record SlotOfferDetail(UUID id, UUID waitlistId, NamedRef store, NamedRef service, NamedRef staff,
-		Instant startAt, Instant serviceEndAt, SlotOfferStatus status, Instant expiresAt, long remainingSeconds) { }
+	public record SlotOfferDetail(UUID id, UUID waitlistId, NamedRef store, NamedRef service, StaffRef staff,
+		Instant startAt, Instant serviceEndAt, SlotOfferStatus status, Instant expiresAt, long remainingSeconds,
+		UUID resultingReservationId) { }
 
 	public record OfferAcceptance(UUID id, SlotOfferStatus status, Instant acceptedAt) { }
 
