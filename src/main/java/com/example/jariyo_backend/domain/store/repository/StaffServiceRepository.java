@@ -17,4 +17,6 @@ public interface StaffServiceRepository extends JpaRepository<StaffService, UUID
 	Optional<StaffService> findByStoreMemberIdAndServiceId(UUID storeMemberId, UUID serviceId);
 
 	boolean existsByStoreMemberIdAndServiceIdAndActiveTrue(UUID storeMemberId, UUID serviceId);
+
+	void deleteAllByStoreMemberId(UUID storeMemberId);
 }

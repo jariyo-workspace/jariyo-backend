@@ -93,6 +93,7 @@ public class ReservationBookingService {
 	}
 
 	private PreparedCustomerBooking prepareCustomerBooking(CustomerBookingCommand command) {
+		lock("reservation:staff:" + command.staffId());
 		Store store = requireActiveStore(command.storeId());
 		StorePolicy policy = requirePolicy(command.storeId());
 		StoreServiceDefinition service = requireActiveService(command.storeId(), command.serviceId());
@@ -116,6 +117,7 @@ public class ReservationBookingService {
 	@Transactional(propagation = Propagation.MANDATORY)
 	public Reservation bookFromWaitlist(UUID customerId, UUID storeId, UUID serviceId, UUID staffId, Instant startAt,
 		Instant serviceEndAt, Instant occupiedUntil, int partySize) {
+		lock("reservation:staff:" + staffId);
 		return createConfirmed(new ConfirmedBooking(storeId, customerId, serviceId, staffId,
 			ReservationSource.WAITLIST_OFFER, startAt, serviceEndAt, occupiedUntil, partySize, null,
 			ErrorCode.SLOT_OFFER_NO_LONGER_AVAILABLE, ErrorCode.SLOT_OFFER_NO_LONGER_AVAILABLE));

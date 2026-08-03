@@ -9,4 +9,6 @@ public interface StaffScheduleRepository extends JpaRepository<StaffSchedule, UU
 	List<StaffSchedule> findAllByStoreMemberIdIn(Iterable<UUID> storeMemberIds);
 
 	List<StaffSchedule> findAllByStoreMemberIdOrderByDayOfWeekAscStartTimeAsc(UUID storeMemberId);
+
+	void deleteAllByStoreMemberId(UUID storeMemberId);
 }

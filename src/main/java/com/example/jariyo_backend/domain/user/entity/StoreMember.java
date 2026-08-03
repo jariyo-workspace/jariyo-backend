@@ -95,4 +95,16 @@ public class StoreMember {
 	public boolean isBookingEnabled() {
 		return bookingEnabled;
 	}
+
+	public void update(String displayName, StoreMemberRole role, boolean bookingEnabled, StoreMemberStatus status) {
+		this.displayName = displayName;
+		this.role = role;
+		this.bookingEnabled = bookingEnabled;
+		this.status = status;
+	}
+
+	public void deactivate() {
+		status = StoreMemberStatus.INACTIVE;
+		bookingEnabled = false;
+	}
 }

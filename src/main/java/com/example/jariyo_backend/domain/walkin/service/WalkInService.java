@@ -1,5 +1,7 @@
 package com.example.jariyo_backend.domain.walkin.service;
 
+import static com.example.jariyo_backend.domain.availability.service.ScheduleRangeResolver.resolveStoreRanges;
+
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -13,10 +15,8 @@ import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.common.idempotency.PersistentIdempotencyService;
 import com.example.jariyo_backend.domain.auth.support.PhoneNumberNormalizer;
-import com.example.jariyo_backend.domain.store.entity.BusinessHour;
 import com.example.jariyo_backend.domain.store.entity.DayOfWeekValue;
 import com.example.jariyo_backend.domain.store.entity.ScheduleException;
-import com.example.jariyo_backend.domain.store.entity.ScheduleExceptionType;
 import com.example.jariyo_backend.domain.store.entity.ServiceOffering;
 import com.example.jariyo_backend.domain.store.entity.ServiceStatus;
 import com.example.jariyo_backend.domain.store.entity.StaffService;
@@ -413,27 +413,13 @@ public class WalkInService {
 	private BusinessWindow businessWindow(UUID storeId, LocalDate date, LocalTime time) {
 		List<ScheduleException> exceptions = scheduleExceptionRepository.findAllByStoreIdOrderByTargetDateAscCreatedAtAsc(storeId)
 			.stream().filter(exception -> exception.getTargetDate().equals(date)).toList();
-		if (exceptions.stream().anyMatch(exception -> exception.getType() == ScheduleExceptionType.CLOSED_ALL_DAY)) {
-			return new BusinessWindow(false, null);
-		}
-		ScheduleException special = exceptions.stream()
-			.filter(exception -> exception.getType() == ScheduleExceptionType.SPECIAL_OPENING_HOURS).findFirst().orElse(null);
-		LocalTime open;
-		LocalTime close;
-		if (special != null) {
-			open = special.getStartTime();
-			close = special.getEndTime();
-		} else {
-			BusinessHour hours = businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId).stream()
-				.filter(hour -> hour.getDayOfWeek() == DayOfWeekValue.valueOf(date.getDayOfWeek().name())).findFirst()
-				.orElse(null);
-			if (hours == null || hours.isClosed()) return new BusinessWindow(false, null);
-			open = hours.getOpenTime();
-			close = hours.getCloseTime();
-		}
-		boolean blocked = exceptions.stream().filter(exception -> exception.getType() == ScheduleExceptionType.BLOCKED_PERIOD)
-			.anyMatch(exception -> !time.isBefore(exception.getStartTime()) && time.isBefore(exception.getEndTime()));
-		return new BusinessWindow(!blocked && open != null && close != null && !time.isBefore(open) && time.isBefore(close), close);
+		return resolveStoreRanges(date, businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId).stream()
+			.filter(hour -> hour.getDayOfWeek() == DayOfWeekValue.valueOf(date.getDayOfWeek().name())).toList(),
+			exceptions).stream()
+			.filter(range -> range.contains(date.atTime(time), date.atTime(time).plusNanos(1)))
+			.findFirst()
+			.map(range -> new BusinessWindow(true, range.end().toLocalTime()))
+			.orElseGet(() -> new BusinessWindow(false, null));
 	}
 
 	private Store requireStore(UUID storeId) {
