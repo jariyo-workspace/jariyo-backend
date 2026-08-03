@@ -150,6 +150,11 @@ class WaitlistWorkflowIntegrationTests {
 		assertEquals(2, reservationRepository.count());
 		assertEquals(WaitlistStatus.RESERVED,
 			waitlistEntryRepository.findById(waitlist.id()).orElseThrow().getStatus());
+		assertEquals(accepted.reservation().id(),
+			waitlistService.getMine(WAITLIST_USER_ID, waitlist.id()).resultingReservationId());
+		WaitlistService.SlotOfferDetail offerDetail = waitlistService.getOffer(WAITLIST_USER_ID, offers.get(0).id());
+		assertEquals(accepted.reservation().id(), offerDetail.resultingReservationId());
+		assertEquals("대기 테스트 직원", offerDetail.staff().displayName());
 	}
 
 	@Test
