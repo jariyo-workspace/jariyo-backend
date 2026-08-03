@@ -1,11 +1,14 @@
 package com.example.jariyo_backend.domain.store.service;
 
+import java.time.DayOfWeek;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.domain.store.entity.ServiceOffering;
+import com.example.jariyo_backend.domain.store.entity.BusinessHour;
 import com.example.jariyo_backend.domain.store.entity.ServiceStatus;
 import com.example.jariyo_backend.domain.store.entity.StaffService;
 import com.example.jariyo_backend.domain.store.entity.Store;
@@ -83,6 +86,23 @@ class StoreQueryServiceTests {
 			() -> service.listServiceStaff(storeId, serviceId));
 
 		assertEquals(ErrorCode.STAFF_NOT_FOUND, exception.getErrorCode());
+	}
+
+	@Test
+	void groupsMultipleBusinessPeriodsByDay() {
+		UUID storeId = UUID.randomUUID();
+		StoreQueryService service = new StoreQueryService(
+			storeRepository, storePolicyRepository, serviceRepository, staffServiceRepository, storeMemberRepository,
+			businessHourRepository, scheduleExceptionRepository, staffScheduleRepository, staffScheduleExceptionRepository);
+		when(storeRepository.findById(storeId)).thenReturn(Optional.of(activeStore(storeId)));
+		when(businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId)).thenReturn(List.of(
+			new BusinessHour(null, storeId, DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(12, 0), false),
+			new BusinessHour(null, storeId, DayOfWeek.MONDAY, LocalTime.of(13, 0), LocalTime.of(18, 0), false)));
+
+		List<StoreQueryService.BusinessHourSummary> result = service.listBusinessHours(storeId);
+
+		assertEquals(1, result.size());
+		assertEquals(2, result.get(0).periods().size());
 	}
 
 	private Store activeStore(UUID storeId) {

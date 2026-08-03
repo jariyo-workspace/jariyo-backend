@@ -52,6 +52,17 @@ public class ServiceOffering {
 	protected ServiceOffering() {
 	}
 
+	public ServiceOffering(UUID storeId, String name, String description, int durationMinutes, int cleanupMinutes,
+		int capacity) {
+		this.storeId = storeId;
+		this.name = name;
+		this.description = description;
+		this.durationMinutes = durationMinutes;
+		this.cleanupMinutes = cleanupMinutes;
+		this.capacity = capacity;
+		this.status = ServiceStatus.ACTIVE;
+	}
+
 	public UUID getId() {
 		return id;
 	}
@@ -82,5 +93,21 @@ public class ServiceOffering {
 
 	public ServiceStatus getStatus() {
 		return status;
+	}
+
+	public void update(String name, String description, int durationMinutes, int cleanupMinutes, int capacity) {
+		this.name = name;
+		this.description = description;
+		this.durationMinutes = durationMinutes;
+		this.cleanupMinutes = cleanupMinutes;
+		this.capacity = capacity;
+	}
+
+	public void activate() {
+		status = ServiceStatus.ACTIVE;
+	}
+
+	public void deactivate() {
+		status = ServiceStatus.INACTIVE;
 	}
 }

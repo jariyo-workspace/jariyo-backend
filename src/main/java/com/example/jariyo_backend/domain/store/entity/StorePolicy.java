@@ -138,4 +138,23 @@ public class StorePolicy {
 	public boolean isAutoNoShowEnabled() {
 		return autoNoShowEnabled;
 	}
+
+	public void update(int bookingOpenDays, int minimumBookingNoticeMinutes,
+		int cancellationDeadlineMinutes, int checkInOpenBeforeMinutes, int lateToleranceMinutes,
+		int noShowAfterMinutes, int reservationHoldMinutes, int slotOfferExpirationMinutes,
+		int walkInCallTimeoutMinutes, boolean waitlistEnabled, boolean walkInEnabled,
+		boolean autoNoShowEnabled) {
+		this.bookingOpenDays = bookingOpenDays;
+		this.minimumBookingNoticeMinutes = minimumBookingNoticeMinutes;
+		this.cancellationDeadlineMinutes = cancellationDeadlineMinutes;
+		this.checkInOpenBeforeMinutes = checkInOpenBeforeMinutes;
+		this.lateToleranceMinutes = lateToleranceMinutes;
+		this.noShowAfterMinutes = noShowAfterMinutes;
+		this.reservationHoldMinutes = reservationHoldMinutes;
+		this.slotOfferExpirationMinutes = slotOfferExpirationMinutes;
+		this.walkInCallTimeoutMinutes = walkInCallTimeoutMinutes;
+		this.waitlistEnabled = waitlistEnabled;
+		this.walkInEnabled = walkInEnabled;
+		this.autoNoShowEnabled = autoNoShowEnabled;
+	}
 }

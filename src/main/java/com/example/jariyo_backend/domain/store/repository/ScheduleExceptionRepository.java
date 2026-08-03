@@ -10,4 +10,6 @@ public interface ScheduleExceptionRepository extends JpaRepository<ScheduleExcep
 	List<ScheduleException> findAllByStoreIdAndTargetDateBetween(UUID storeId, LocalDate from, LocalDate to);
 
 	List<ScheduleException> findAllByStoreIdOrderByTargetDateAscCreatedAtAsc(UUID storeId);
+
+	java.util.Optional<ScheduleException> findByIdAndStoreId(UUID id, UUID storeId);
 }
