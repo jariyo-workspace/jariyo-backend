@@ -2,6 +2,7 @@ package com.example.jariyo_backend.walkin;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.example.jariyo_backend.common.error.BusinessException;
 import com.example.jariyo_backend.common.error.ErrorCode;
 import com.example.jariyo_backend.common.idempotency.PersistentIdempotencyService;
+import com.example.jariyo_backend.domain.admin.service.ServiceSessionCommandService;
 import com.example.jariyo_backend.domain.walkin.repository.QueueNumberIssuer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
@@ -36,8 +38,8 @@ import com.example.jariyo_backend.domain.walkin.service.WalkInService;
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.CallCommand;
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.CallResponse;
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.CallResponseCommand;
-import com.example.jariyo_backend.domain.walkin.service.WalkInService.CompleteServiceCommand;
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.RegisterCustomerCommand;
+import com.example.jariyo_backend.domain.walkin.service.WalkInService.ReasonCommand;
 import com.example.jariyo_backend.domain.walkin.service.WalkInService.StartServiceCommand;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -63,6 +65,7 @@ class WalkInWorkflowIntegrationTests {
 	@Autowired PersistentIdempotencyService idempotencyService;
 	@Autowired PlatformTransactionManager transactionManager;
 	@Autowired WalkInService walkInService;
+	@Autowired ServiceSessionCommandService serviceSessionCommandService;
 
 	@DynamicPropertySource
 	static void registerProperties(DynamicPropertyRegistry registry) {
@@ -123,8 +126,9 @@ class WalkInWorkflowIntegrationTests {
 
 		WalkInService.StartServiceResult started = walkInService.startService(USER_ID, UUID.fromString(STORE_ID),
 			registered.id(), "flow-start", new StartServiceCommand(MEMBER_ID));
-		WalkInService.CompleteServiceResult completed = walkInService.completeService(USER_ID,
-			UUID.fromString(STORE_ID), started.serviceSessionId(), "flow-complete", new CompleteServiceCommand("정상 완료"));
+		ServiceSessionCommandService.CompleteServiceResult completed = serviceSessionCommandService.completeService(USER_ID,
+			UUID.fromString(STORE_ID), started.serviceSessionId(), "flow-complete",
+			new ServiceSessionCommandService.CompleteServiceCommand("정상 완료"));
 
 		assertEquals("COMPLETED", completed.status().name());
 		assertEquals(5, jdbcTemplate.queryForObject(
@@ -195,6 +199,50 @@ class WalkInWorkflowIntegrationTests {
 		insertWalkIn(UUID.fromString("00000000-0000-7000-8000-000000000711"), 1);
 		assertThrows(DataIntegrityViolationException.class,
 			() -> insertWalkIn(UUID.fromString("00000000-0000-7000-8000-000000000712"), 2));
+	}
+
+	@Test
+	void recalculatesWaitingAheadAfterEarlierEntryLeavesQueue() {
+		WalkInService.WalkInSummary first = walkInService.registerGuest(USER_ID, "ahead-first",
+			UUID.fromString(STORE_ID), new WalkInService.RegisterGuestCommand("첫 고객", "010-2222-3333",
+				SERVICE_ID, MEMBER_ID, 1));
+		WalkInService.WalkInSummary second = walkInService.registerCustomer(USER_ID, "ahead-second",
+			new RegisterCustomerCommand(UUID.fromString(STORE_ID), SERVICE_ID, MEMBER_ID, 1));
+
+		assertEquals(1, second.waitingAhead());
+		walkInService.cancelAdmin(USER_ID, UUID.fromString(STORE_ID), first.id(), "ahead-cancel",
+			new ReasonCommand("대기 취소"));
+		assertEquals(0, walkInService.getMine(USER_ID, second.id()).waitingAhead());
+	}
+
+	@Test
+	void keepsCustomerCallResponsesAndExpirationConsistent() {
+		WalkInService.WalkInSummary waiting = walkInService.registerCustomer(USER_ID, "response-register",
+			new RegisterCustomerCommand(UUID.fromString(STORE_ID), SERVICE_ID, MEMBER_ID, 1));
+		assertEquals(WalkInStatus.CANCELLED, walkInService.cancelMine(USER_ID, waiting.id(), "response-cancel",
+			new ReasonCommand("고객 취소")).status());
+
+		WalkInService.WalkInSummary delayed = walkInService.registerCustomer(USER_ID, "response-register-delayed",
+			new RegisterCustomerCommand(UUID.fromString(STORE_ID), SERVICE_ID, MEMBER_ID, 1));
+		walkInService.call(USER_ID, UUID.fromString(STORE_ID), delayed.id(), "response-call-delayed",
+			new CallCommand(3), false);
+		assertEquals(WalkInStatus.SKIPPED, walkInService.respondCall(USER_ID, delayed.id(), "response-delayed",
+			new CallResponseCommand(CallResponse.DELAYED)).status());
+		walkInService.call(USER_ID, UUID.fromString(STORE_ID), delayed.id(), "response-recall",
+			new CallCommand(3), true);
+		assertEquals(WalkInStatus.CANCELLED, walkInService.respondCall(USER_ID, delayed.id(), "response-cancel-call",
+			new CallResponseCommand(CallResponse.CANCEL)).status());
+
+		WalkInService.WalkInSummary expired = walkInService.registerCustomer(USER_ID, "response-register-expired",
+			new RegisterCustomerCommand(UUID.fromString(STORE_ID), SERVICE_ID, MEMBER_ID, 1));
+		walkInService.call(USER_ID, UUID.fromString(STORE_ID), expired.id(), "response-call-expired",
+			new CallCommand(3), false);
+		jdbcTemplate.update("UPDATE walk_in_entry SET call_expires_at = ? WHERE id = ?",
+			java.sql.Timestamp.from(Instant.now().minusSeconds(1)), expired.id());
+		BusinessException exception = assertThrows(BusinessException.class,
+			() -> walkInService.respondCall(USER_ID, expired.id(), "response-expired",
+				new CallResponseCommand(CallResponse.ENTERING)));
+		assertEquals(ErrorCode.WALK_IN_CALL_EXPIRED, exception.getErrorCode());
 	}
 
 	private void insertWalkIn(UUID id, int queueNumber) {
