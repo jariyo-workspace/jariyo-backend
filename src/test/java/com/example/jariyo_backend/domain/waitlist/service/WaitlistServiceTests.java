@@ -29,14 +29,18 @@ import com.example.jariyo_backend.domain.user.entity.UserAccount;
 import com.example.jariyo_backend.domain.user.repository.CustomerProfileRepository;
 import com.example.jariyo_backend.domain.user.repository.StoreMemberRepository;
 import com.example.jariyo_backend.domain.waitlist.entity.SlotOffer;
+import com.example.jariyo_backend.domain.waitlist.entity.SlotOfferStatus;
 import com.example.jariyo_backend.domain.waitlist.entity.StaffPreferenceType;
 import com.example.jariyo_backend.domain.waitlist.entity.WaitlistEntry;
+import com.example.jariyo_backend.domain.waitlist.entity.WaitlistStatus;
 import com.example.jariyo_backend.domain.waitlist.repository.SlotOfferRepository;
 import com.example.jariyo_backend.domain.waitlist.repository.SlotOfferStatusHistoryRepository;
 import com.example.jariyo_backend.domain.waitlist.repository.WaitlistEntryRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -149,6 +153,38 @@ class WaitlistServiceTests {
 			serviceEndAt, occupiedUntil, 1);
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = {true, false})
+	void declineAppliesWaitlistPolicy(boolean keepWaitlistActive) throws Exception {
+		UUID userId = UUID.randomUUID();
+		UUID customerId = UUID.randomUUID();
+		UUID waitlistId = UUID.randomUUID();
+		UUID offerId = UUID.randomUUID();
+		CustomerProfile customer = customerProfile(customerId);
+		WaitlistEntry entry = new WaitlistEntry(UUID.randomUUID(), customerId, UUID.randomUUID(), null,
+			StaffPreferenceType.ANY_STAFF, LocalDate.of(2026, 7, 27), LocalTime.of(13, 0), LocalTime.of(17, 0),
+			1, 1, Instant.parse("2026-07-27T08:00:00Z"));
+		entry.markOffered();
+		setId(entry, waitlistId);
+		SlotOffer offer = new SlotOffer(waitlistId, entry.getStoreId(), entry.getServiceId(), UUID.randomUUID(),
+			Instant.parse("2026-07-26T01:00:00Z"), Instant.parse("2026-07-26T01:30:00Z"),
+			Instant.parse("2026-07-26T01:40:00Z"), UUID.randomUUID(), Instant.parse("2026-07-26T02:00:00Z"));
+		setId(offer, offerId);
+		when(customerProfileRepository.findByUser_Id(userId)).thenReturn(Optional.of(customer));
+		when(slotOfferRepository.findByIdForUpdate(offerId)).thenReturn(Optional.of(offer));
+		when(waitlistEntryRepository.findByIdForUpdate(waitlistId)).thenReturn(Optional.of(entry));
+		mockIdempotentDeclineExecution();
+		WaitlistService service = waitlistService();
+
+		WaitlistService.DeclineSlotOfferResult result = service.decline(userId, offerId, "key",
+			new WaitlistService.DeclineSlotOfferCommand(keepWaitlistActive));
+
+		assertEquals(SlotOfferStatus.DECLINED, result.offer().status());
+		assertEquals(keepWaitlistActive ? WaitlistStatus.WAITING : WaitlistStatus.CANCELLED,
+			result.waitlist().status());
+		verify(slotOfferStatusHistoryRepository).save(any());
+	}
+
 	private WaitlistService waitlistService() {
 		return new WaitlistService(waitlistEntryRepository, slotOfferRepository, slotOfferStatusHistoryRepository,
 			customerProfileRepository, storeRepository, storePolicyRepository, serviceRepository, staffServiceRepository,
@@ -171,6 +207,15 @@ class WaitlistServiceTests {
 			return action.get();
 		}).when(idempotencyService).execute(any(), any(), any(), any(),
 			eq(WaitlistService.AcceptSlotOfferResult.class), any());
+	}
+
+	private void mockIdempotentDeclineExecution() {
+		doAnswer(invocation -> {
+			@SuppressWarnings("unchecked")
+			java.util.function.Supplier<WaitlistService.DeclineSlotOfferResult> action = invocation.getArgument(5);
+			return action.get();
+		}).when(idempotencyService).execute(any(), any(), any(), any(),
+			eq(WaitlistService.DeclineSlotOfferResult.class), any());
 	}
 
 	private CustomerProfile customerProfile(UUID customerId) throws Exception {

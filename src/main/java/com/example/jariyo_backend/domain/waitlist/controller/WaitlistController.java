@@ -14,6 +14,8 @@ import com.example.jariyo_backend.domain.waitlist.service.WaitlistService;
 import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.AcceptSlotOfferResult;
 import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.CancelWaitlistCommand;
 import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.CreateWaitlistCommand;
+import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.DeclineSlotOfferCommand;
+import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.DeclineSlotOfferResult;
 import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.SlotOfferDetail;
 import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.SlotOfferSummary;
 import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.WaitlistCancelResult;
@@ -93,6 +95,14 @@ public class WaitlistController {
 		return ok(waitlistService.accept(userId(jwt), offerId, key));
 	}
 
+	@PostMapping("/slot-offers/{offerId}/decline")
+	public ResponseEntity<ApiResponse<DeclineSlotOfferResult>> decline(@AuthenticationPrincipal Jwt jwt,
+		@PathVariable UUID offerId, @RequestHeader(IdempotencyKey.HEADER_NAME) String key,
+		@Valid @RequestBody DeclineSlotOfferRequest request) {
+		return ok(waitlistService.decline(userId(jwt), offerId, key,
+			new DeclineSlotOfferCommand(request.keepWaitlistActive())));
+	}
+
 	private UUID userId(Jwt jwt) {
 		return AuthenticatedUser.from(jwt).id();
 	}
@@ -109,4 +119,6 @@ public class WaitlistController {
 		@Min(1) @Max(20) int partySize) { }
 
 	public record CancelWaitlistRequest(@NotBlank String reason) { }
+
+	public record DeclineSlotOfferRequest(@NotNull Boolean keepWaitlistActive) { }
 }

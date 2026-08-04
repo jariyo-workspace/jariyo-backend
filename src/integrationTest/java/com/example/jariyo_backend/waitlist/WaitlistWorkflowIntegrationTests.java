@@ -27,6 +27,8 @@ import com.example.jariyo_backend.domain.waitlist.repository.WaitlistEntryReposi
 import com.example.jariyo_backend.domain.waitlist.service.WaitlistService;
 import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.AcceptSlotOfferResult;
 import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.CreateWaitlistCommand;
+import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.DeclineSlotOfferCommand;
+import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.DeclineSlotOfferResult;
 import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.SlotOfferSummary;
 import com.example.jariyo_backend.domain.waitlist.service.WaitlistService.WaitlistSummary;
 import org.junit.jupiter.api.AfterEach;
@@ -42,6 +44,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers
@@ -179,6 +182,105 @@ class WaitlistWorkflowIntegrationTests {
 	}
 
 	@Test
+	void declinesOfferAndKeepsWaitlistActiveIdempotently() {
+		WaitlistSummary waitlist = createOfferedWaitlist("decline-keep");
+		UUID offerId = waitlistService.listOffers(WAITLIST_USER_ID, SlotOfferStatus.PENDING).get(0).id();
+
+		DeclineSlotOfferResult declined = waitlistService.decline(WAITLIST_USER_ID, offerId, "offer-decline-keep",
+			new DeclineSlotOfferCommand(true));
+		DeclineSlotOfferResult retried = waitlistService.decline(WAITLIST_USER_ID, offerId, "offer-decline-keep",
+			new DeclineSlotOfferCommand(true));
+
+		assertEquals(SlotOfferStatus.DECLINED, declined.offer().status());
+		assertEquals(WaitlistStatus.WAITING, declined.waitlist().status());
+		assertEquals(declined, retried);
+		assertEquals(WaitlistStatus.WAITING, waitlistEntryRepository.findById(waitlist.id()).orElseThrow().getStatus());
+		assertEquals(1, jdbcTemplate.queryForObject(
+			"SELECT count(*) FROM slot_offer_status_history WHERE slot_offer_id = ? AND next_status = 'DECLINED'",
+			Integer.class, offerId));
+	}
+
+	@Test
+	void declinesOfferAndCancelsWaitlist() {
+		WaitlistSummary waitlist = createOfferedWaitlist("decline-cancel");
+		UUID offerId = waitlistService.listOffers(WAITLIST_USER_ID, SlotOfferStatus.PENDING).get(0).id();
+
+		DeclineSlotOfferResult declined = waitlistService.decline(WAITLIST_USER_ID, offerId, "offer-decline-cancel",
+			new DeclineSlotOfferCommand(false));
+
+		assertEquals(SlotOfferStatus.DECLINED, declined.offer().status());
+		assertEquals(WaitlistStatus.CANCELLED, declined.waitlist().status());
+		assertEquals(WaitlistStatus.CANCELLED,
+			waitlistEntryRepository.findById(waitlist.id()).orElseThrow().getStatus());
+	}
+
+	@Test
+	void rejectsDeclineForAnotherCustomer() {
+		createOfferedWaitlist("decline-owner");
+		UUID offerId = waitlistService.listOffers(WAITLIST_USER_ID, SlotOfferStatus.PENDING).get(0).id();
+
+		BusinessException exception = assertThrows(BusinessException.class,
+			() -> waitlistService.decline(RESERVATION_USER_ID, offerId, "offer-decline-owner",
+				new DeclineSlotOfferCommand(true)));
+
+		assertEquals(ErrorCode.WAITLIST_NOT_OWNED_BY_USER, exception.getErrorCode());
+	}
+
+	@Test
+	void rejectsExpiredOfferDecline() {
+		createOfferedWaitlist("decline-expired");
+		UUID offerId = waitlistService.listOffers(WAITLIST_USER_ID, SlotOfferStatus.PENDING).get(0).id();
+		jdbcTemplate.update("UPDATE slot_offer SET expires_at = ? WHERE id = ?",
+			Timestamp.from(Instant.now().minusSeconds(5)), offerId);
+
+		BusinessException exception = assertThrows(BusinessException.class,
+			() -> waitlistService.decline(WAITLIST_USER_ID, offerId, "offer-decline-expired",
+				new DeclineSlotOfferCommand(true)));
+
+		assertEquals(ErrorCode.SLOT_OFFER_EXPIRED, exception.getErrorCode());
+	}
+
+	@Test
+	void rejectsAlreadyProcessedOfferDecline() {
+		createOfferedWaitlist("decline-processed");
+		UUID offerId = waitlistService.listOffers(WAITLIST_USER_ID, SlotOfferStatus.PENDING).get(0).id();
+		waitlistService.decline(WAITLIST_USER_ID, offerId, "offer-decline-first",
+			new DeclineSlotOfferCommand(true));
+
+		BusinessException declined = assertThrows(BusinessException.class,
+			() -> waitlistService.decline(WAITLIST_USER_ID, offerId, "offer-decline-second",
+				new DeclineSlotOfferCommand(true)));
+
+		assertEquals(ErrorCode.SLOT_OFFER_ALREADY_DECLINED, declined.getErrorCode());
+	}
+
+	@Test
+	void rejectsDeclineWhenWaitlistIsNotOffered() {
+		WaitlistSummary waitlist = createOfferedWaitlist("decline-state");
+		UUID offerId = waitlistService.listOffers(WAITLIST_USER_ID, SlotOfferStatus.PENDING).get(0).id();
+		jdbcTemplate.update("UPDATE waitlist_entry SET status = 'WAITING' WHERE id = ?", waitlist.id());
+
+		BusinessException exception = assertThrows(BusinessException.class,
+			() -> waitlistService.decline(WAITLIST_USER_ID, offerId, "offer-decline-state",
+				new DeclineSlotOfferCommand(true)));
+
+		assertEquals(ErrorCode.WAITLIST_INVALID_STATE, exception.getErrorCode());
+	}
+
+	@Test
+	void rejectsAcceptedOfferDecline() {
+		createOfferedWaitlist("decline-accepted");
+		UUID offerId = waitlistService.listOffers(WAITLIST_USER_ID, SlotOfferStatus.PENDING).get(0).id();
+		waitlistService.accept(WAITLIST_USER_ID, offerId, "offer-accept-before-decline");
+
+		BusinessException exception = assertThrows(BusinessException.class,
+			() -> waitlistService.decline(WAITLIST_USER_ID, offerId, "offer-decline-accepted",
+				new DeclineSlotOfferCommand(true)));
+
+		assertEquals(ErrorCode.SLOT_OFFER_ALREADY_ACCEPTED, exception.getErrorCode());
+	}
+
+	@Test
 	void directBookingAndWaitlistAcceptanceCannotBothTakeCancelledSlot() {
 		LocalDate targetDate = LocalDate.now(ZoneId.of("Asia/Seoul")).plusDays(2);
 		WaitlistSummary waitlist = waitlistService.create(WAITLIST_USER_ID, "waitlist-race",
@@ -245,6 +347,17 @@ class WaitlistWorkflowIntegrationTests {
 			""", RESERVATION_ID, STORE_ID, RESERVATION_CUSTOMER_ID, SERVICE_ID, STAFF_MEMBER_ID,
 			Timestamp.from(startAt.toInstant()), Timestamp.from(startAt.plusMinutes(30).toInstant()),
 			Timestamp.from(startAt.plusMinutes(40).toInstant()));
+	}
+
+	private WaitlistSummary createOfferedWaitlist(String keySuffix) {
+		LocalDate targetDate = LocalDate.now(ZoneId.of("Asia/Seoul")).plusDays(2);
+		WaitlistSummary waitlist = waitlistService.create(WAITLIST_USER_ID, "waitlist-" + keySuffix,
+			new CreateWaitlistCommand(STORE_ID, SERVICE_ID, STAFF_MEMBER_ID, StaffPreferenceType.SPECIFIC_ONLY,
+				targetDate, java.time.LocalTime.of(14, 0), java.time.LocalTime.of(16, 0), 1));
+		insertReservation(targetDate, java.time.LocalTime.of(15, 0));
+		reservationService.cancelMine(RESERVATION_USER_ID, RESERVATION_ID, "reservation-" + keySuffix,
+			new ReservationService.CancelReservationCommand("일정 변경"));
+		return waitlist;
 	}
 
 	private void insertUser(UUID id, String email, String phone) {
