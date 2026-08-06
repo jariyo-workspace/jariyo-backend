@@ -115,4 +115,18 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 		order by r.holdExpiresAt asc
 		""")
 	List<UUID> findExpiredHoldIds(@Param("status") ReservationStatus status, @Param("now") Instant now);
+
+	@Query("""
+		select r from Reservation r
+		where r.storeId = :storeId
+			and r.status in :statuses
+			and (r.status <> :heldStatus or r.holdExpiresAt > :now)
+			and r.occupiedUntil > :now
+		order by r.startAt asc, r.id asc
+		""")
+	List<Reservation> findFutureActiveReservations(
+		@Param("storeId") UUID storeId,
+		@Param("statuses") Collection<ReservationStatus> statuses,
+		@Param("heldStatus") ReservationStatus heldStatus,
+		@Param("now") Instant now);
 }

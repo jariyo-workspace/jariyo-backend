@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.example.jariyo_backend.domain.store.service.StoreQueryService;
+import com.example.jariyo_backend.domain.store.service.StoreSettingsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -17,12 +18,14 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class StoreControllerTests {
 	private StoreQueryService storeQueryService;
+	private StoreSettingsService storeSettingsService;
 	private MockMvc mockMvc;
 
 	@BeforeEach
 	void setUp() {
 		storeQueryService = mock();
-		mockMvc = MockMvcBuilders.standaloneSetup(new StoreController(storeQueryService)).build();
+		storeSettingsService = mock();
+		mockMvc = MockMvcBuilders.standaloneSetup(new StoreController(storeQueryService, storeSettingsService)).build();
 	}
 
 	@Test

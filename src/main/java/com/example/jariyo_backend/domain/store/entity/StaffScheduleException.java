@@ -49,6 +49,17 @@ public class StaffScheduleException {
 	protected StaffScheduleException() {
 	}
 
+	public StaffScheduleException(UUID storeMemberId, LocalDate targetDate, StaffScheduleExceptionType type,
+		LocalTime startTime, LocalTime endTime, String reason, UUID createdByMemberId) {
+		this.storeMemberId = storeMemberId;
+		this.targetDate = targetDate;
+		this.type = type;
+		this.startTime = startTime;
+		this.endTime = endTime;
+		this.reason = reason;
+		this.createdByMemberId = createdByMemberId;
+	}
+
 	public UUID getId() {
 		return id;
 	}
@@ -75,6 +86,10 @@ public class StaffScheduleException {
 
 	public String getReason() {
 		return reason;
+	}
+
+	public UUID getCreatedByMemberId() {
+		return createdByMemberId;
 	}
 }
 

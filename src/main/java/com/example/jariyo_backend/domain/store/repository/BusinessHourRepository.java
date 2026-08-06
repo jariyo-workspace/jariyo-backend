@@ -9,4 +9,6 @@ public interface BusinessHourRepository extends JpaRepository<BusinessHour, UUID
 	List<BusinessHour> findAllByStoreId(UUID storeId);
 
 	List<BusinessHour> findAllByStoreIdOrderByDayOfWeekAsc(UUID storeId);
+
+	void deleteAllByStoreId(UUID storeId);
 }

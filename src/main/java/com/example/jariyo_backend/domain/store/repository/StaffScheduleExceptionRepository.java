@@ -11,4 +11,6 @@ public interface StaffScheduleExceptionRepository extends JpaRepository<StaffSch
 		LocalDate from, LocalDate to);
 
 	List<StaffScheduleException> findAllByStoreMemberIdOrderByTargetDateAscCreatedAtAsc(UUID storeMemberId);
+
+	java.util.Optional<StaffScheduleException> findByIdAndStoreMemberId(UUID id, UUID storeMemberId);
 }

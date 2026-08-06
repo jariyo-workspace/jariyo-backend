@@ -99,4 +99,11 @@ public class Store {
 	public Instant getUpdatedAt() {
 		return updatedAt;
 	}
+
+	public void update(String name, String description, String phoneNumber, String address) {
+		this.name = name;
+		this.description = description;
+		this.phoneNumber = phoneNumber;
+		this.address = address;
+	}
 }

@@ -122,9 +122,7 @@ public class StoreQueryService {
 
 	public List<BusinessHourSummary> listBusinessHours(UUID storeId) {
 		getStoreOrThrow(storeId);
-		return businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId).stream()
-			.map(BusinessHourSummary::from)
-			.toList();
+		return summarizeBusinessHours(businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId));
 	}
 
 	public List<ScheduleExceptionSummary> listScheduleExceptions(UUID storeId) {
@@ -181,6 +179,17 @@ public class StoreQueryService {
 			.collect(Collectors.groupingBy(StaffService::getServiceId, Collectors.counting()));
 	}
 
+	private static List<BusinessHourSummary> summarizeBusinessHours(List<BusinessHour> hours) {
+		return hours.stream().collect(Collectors.groupingBy(BusinessHour::getDayOfWeek)).entrySet().stream()
+			.sorted(Map.Entry.comparingByKey())
+			.map(entry -> new BusinessHourSummary(entry.getKey().name(),
+				entry.getValue().stream().allMatch(BusinessHour::isClosed),
+				entry.getValue().stream().filter(hour -> !hour.isClosed())
+					.map(hour -> new BusinessHourSummary.Period(hour.getOpenTime().toString(),
+						hour.getCloseTime().toString())).toList()))
+			.toList();
+	}
+
 	public record StoreSummary(UUID id, String name, String description, String phoneNumber, String address, String timezone,
 		String status) {
 		static StoreSummary from(Store store) {
@@ -194,7 +203,7 @@ public class StoreQueryService {
 		static StoreDetail from(Store store, StorePolicy policy, List<BusinessHour> businessHours) {
 			return new StoreDetail(store.getId(), store.getName(), store.getDescription(), store.getPhoneNumber(),
 				store.getAddress(), store.getTimezone(), store.getStatus().name(),
-				businessHours.stream().map(BusinessHourSummary::from).toList(),
+				summarizeBusinessHours(businessHours),
 				policy == null ? null : StorePolicySummary.from(policy));
 		}
 	}
@@ -249,12 +258,7 @@ public class StoreQueryService {
 		}
 	}
 
-	public record BusinessHourSummary(String dayOfWeek, List<Period> periods) {
-		static BusinessHourSummary from(BusinessHour hour) {
-			return new BusinessHourSummary(hour.getDayOfWeek().name(),
-				List.of(new Period(hour.getOpenTime() == null ? null : hour.getOpenTime().toString(),
-					hour.getCloseTime() == null ? null : hour.getCloseTime().toString())));
-		}
+	public record BusinessHourSummary(String dayOfWeek, boolean isClosed, List<Period> periods) {
 		public record Period(String openTime, String closeTime) {
 		}
 	}

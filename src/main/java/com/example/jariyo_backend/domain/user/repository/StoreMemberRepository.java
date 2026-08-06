@@ -23,4 +23,9 @@ public interface StoreMemberRepository extends JpaRepository<StoreMember, UUID> 
 
 	List<StoreMember> findAllByStoreIdAndStatusAndBookingEnabledTrueAndIdIn(
 		UUID storeId, StoreMemberStatus status, Collection<UUID> ids);
+
+	long countByStoreIdAndRoleAndStatus(UUID storeId, com.example.jariyo_backend.domain.user.entity.StoreMemberRole role,
+		StoreMemberStatus status);
+
+	boolean existsByUser_IdAndStoreId(UUID userId, UUID storeId);
 }

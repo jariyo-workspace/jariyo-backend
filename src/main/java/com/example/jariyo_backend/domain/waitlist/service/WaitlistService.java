@@ -219,6 +219,40 @@ public class WaitlistService {
 					new ResultingReservation(reservation.getId(), reservation.getSource(), reservation.getStatus(),
 						reservation.getStartAt()),
 					new ResultingWaitlist(entry.getId(), entry.getStatus()));
+		});
+	}
+
+	@Transactional
+	public DeclineSlotOfferResult decline(UUID userId, UUID offerId, String key, DeclineSlotOfferCommand command) {
+		return idempotencyService.execute(userId, "slot-offer:decline:" + offerId, key, command,
+			DeclineSlotOfferResult.class, () -> {
+				CustomerProfile customer = requireCustomer(userId);
+				SlotOffer offer = slotOfferRepository.findByIdForUpdate(offerId)
+					.orElseThrow(() -> new BusinessException(ErrorCode.SLOT_OFFER_NOT_FOUND));
+				WaitlistEntry entry = requireOwnedWaitlistForUpdate(customer.getId(), offer.getWaitlistEntryId());
+				Instant now = clock.instant();
+				if (offer.isAlreadyAccepted()) {
+					throw new BusinessException(ErrorCode.SLOT_OFFER_ALREADY_ACCEPTED);
+				}
+				if (offer.isAlreadyDeclinedOrRevoked()) {
+					throw new BusinessException(ErrorCode.SLOT_OFFER_ALREADY_DECLINED);
+				}
+				if (!offer.isPending() || offer.isExpiredAt(now)) {
+					throw new BusinessException(ErrorCode.SLOT_OFFER_EXPIRED);
+				}
+				if (!entry.isOffered()) {
+					throw new BusinessException(ErrorCode.WAITLIST_INVALID_STATE);
+				}
+				offer.decline(now);
+				if (command.keepWaitlistActive()) {
+					entry.restoreWaiting();
+				} else {
+					entry.markCancelled(now);
+				}
+				slotOfferStatusHistoryRepository.save(new SlotOfferStatusHistory(offer.getId(), SlotOfferStatus.PENDING,
+					SlotOfferStatus.DECLINED, SlotOfferActorType.CUSTOMER, customer.getId(), "DECLINE_SLOT_OFFER", now));
+				return new DeclineSlotOfferResult(new DeclinedOffer(offer.getId(), offer.getStatus()),
+					new ResultingWaitlist(entry.getId(), entry.getStatus()));
 			});
 	}
 
@@ -487,6 +521,8 @@ public class WaitlistService {
 
 	public record CancelWaitlistCommand(String reason) { }
 
+	public record DeclineSlotOfferCommand(boolean keepWaitlistActive) { }
+
 	public record EmptyCommand() { }
 
 	public record NamedRef(UUID id, String name) { }
@@ -514,6 +550,8 @@ public class WaitlistService {
 
 	public record OfferAcceptance(UUID id, SlotOfferStatus status, Instant acceptedAt) { }
 
+	public record DeclinedOffer(UUID id, SlotOfferStatus status) { }
+
 	public record ResultingReservation(UUID id, com.example.jariyo_backend.domain.reservation.entity.ReservationSource source,
 		ReservationStatus status, Instant startAt) { }
 
@@ -521,6 +559,8 @@ public class WaitlistService {
 
 	public record AcceptSlotOfferResult(OfferAcceptance offer, ResultingReservation reservation,
 		ResultingWaitlist waitlist) { }
+
+	public record DeclineSlotOfferResult(DeclinedOffer offer, ResultingWaitlist waitlist) { }
 
 	private record SlotOfferCreatedPayload(UUID slotOfferId, UUID waitlistId, UUID reservationId, UUID storeId,
 		UUID serviceId, UUID staffId, Instant startAt, Instant expiresAt) { }
