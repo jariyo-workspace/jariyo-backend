@@ -1,7 +1,8 @@
 .git
 .gradle
+.idea
+.tmp
+.vscode
 build
-load-tests/**/keys
-load-tests/**/logs
-load-tests/**/results
-load-tests/**/volumes
+jariyo-docs
+reports
